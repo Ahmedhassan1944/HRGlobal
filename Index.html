@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="EDECS HR Workforce & Nationalization Dashboard — Internal Analytics Platform for Egypt, KSA, UAE, Oman, Tanzania, Angola">
+  <meta name="robots" content="noindex, nofollow">
+  <title>EDECS HR Dashboard</title>
+
+  <!-- Google Fonts: Inter (body) + Outfit (headings) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Leaflet.js CSS (Interactive Map) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+
+  <?!= include('Styles') ?>
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       LOADING SCREEN
+  ════════════════════════════════════════════════════════════════════════ -->
+  <div id="loading-screen" class="loading-screen" role="status" aria-live="polite" aria-label="Loading dashboard">
+    <div class="loading-screen__inner">
+      <div class="loading-screen__logo" aria-label="EDECS Logo">
+        <svg width="140" height="44" viewBox="0 0 140 44" aria-hidden="true">
+          <text x="0" y="38" font-family="Outfit, sans-serif" font-size="38"
+                font-weight="800" fill="#0077B6" letter-spacing="2">EDECS</text>
+        </svg>
+      </div>
+      <div class="loading-screen__spinner" aria-hidden="true">
+        <div class="loading-screen__spinner-ring"></div>
+      </div>
+      <p class="loading-screen__text">Loading Dashboard</p>
+      <p class="loading-screen__subtext">Connecting to HR Data Source...</p>
+      <div class="loading-screen__progress" aria-hidden="true">
+        <div class="loading-screen__progress-bar"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       ERROR BANNER (hidden by default)
+  ════════════════════════════════════════════════════════════════════════ -->
+  <div id="error-banner" class="error-banner" role="alert" aria-live="assertive" aria-atomic="true" hidden>
+    <div class="error-banner__content">
+      <span class="error-banner__icon" aria-hidden="true">⚠</span>
+      <span id="error-banner-message" class="error-banner__message">
+        Unable to load dashboard. Please contact your system administrator.
+      </span>
+      <button id="error-dismiss-btn" class="error-banner__dismiss"
+              type="button" aria-label="Dismiss error notification">✕</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       APPLICATION SHELL
+  ════════════════════════════════════════════════════════════════════════ -->
+  <div id="app" class="app" hidden aria-hidden="true">
+
+    <!-- Shared components: navbar, global header -->
+    <?!= include('Components') ?>
+
+    <!-- Page 1: HR Overview -->
+    <main id="page-overview"
+          class="page page--overview"
+          role="main"
+          aria-label="HR Overview"
+          data-page="overview">
+      <?!= include('Overview') ?>
+    </main>
+
+    <!-- Page 2: Nationalization & Hiring -->
+    <main id="page-nationalization"
+          class="page page--nationalization"
+          role="main"
+          aria-label="Nationalization and Hiring Trends"
+          data-page="nationalization"
+          hidden>
+      <?!= include('Nationalization') ?>
+    </main>
+
+  </div><!-- /#app -->
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       EXTERNAL LIBRARIES (loaded before app JS for availability)
+  ════════════════════════════════════════════════════════════════════════ -->
+  <!-- Leaflet.js — Real Interactive Map -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN/WLs=" crossorigin=""></script>
+
+  <!-- Chart.js — Multi-line Hiring Trend Chart -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <!-- Application JavaScript -->
+  <?!= include('JavaScript') ?>
+
+</body>
+</html>

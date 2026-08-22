@@ -1,0 +1,219 @@
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     OVERVIEW.html — Page 1: HR Overview
+     Sections: KPI Card, Filter Bar, Data Tables (3), Interactive Map
+════════════════════════════════════════════════════════════════════════════ -->
+
+<div class="overview-layout">
+
+  <!-- ── ROW 1: KPI CARD + FILTER BAR ──────────────────────────────────── -->
+  <div class="overview-layout__top-row" style="display:grid; grid-template-columns:1fr; gap:1rem;">
+
+    <!-- Head Count KPI Card -->
+    <section aria-labelledby="kpi-headcount-label">
+      <div class="kpi-card" id="overview-kpi-card">
+        <div class="kpi-card__icon" aria-hidden="true">👥</div>
+        <div class="kpi-card__body">
+          <div id="kpi-headcount-label" class="kpi-card__label">Total Head Count</div>
+          <div id="overview-headcount"
+               class="kpi-card__value is-loading"
+               aria-live="polite"
+               aria-label="Total headcount">
+            —
+          </div>
+          <div class="kpi-card__sub">
+            <span id="overview-active-label">Active Employees</span>
+            &nbsp;·&nbsp;
+            <span id="overview-country-context" class="badge badge--gold">All Countries</span>
+          </div>
+        </div>
+        <div style="text-align:right; flex-shrink:0;">
+          <div style="font-size:var(--text-xs); color:var(--color-text-muted); margin-bottom:4px;">BREAKDOWN</div>
+          <div id="overview-kpi-breakdown" style="display:flex; flex-direction:column; gap:4px; align-items:flex-end;">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Filter Bar -->
+    <section aria-label="Dashboard filters">
+      <div class="filter-bar" role="search" aria-label="Filter dashboard data">
+        <span class="filter-bar__label" aria-hidden="true">🔽 Filters</span>
+
+        <div class="filter-bar__group">
+
+          <!-- Department Filter -->
+          <div class="filter-bar__item">
+            <label for="filter-department" class="filter-bar__item-label">Department</label>
+            <select id="filter-department"
+                    class="filter-bar__select"
+                    aria-label="Filter by department">
+              <option value="All">All Departments</option>
+            </select>
+          </div>
+
+          <!-- Country Filter -->
+          <div class="filter-bar__item">
+            <label for="filter-country" class="filter-bar__item-label">Country</label>
+            <select id="filter-country"
+                    class="filter-bar__select"
+                    aria-label="Filter by country">
+              <option value="All">All Countries</option>
+            </select>
+          </div>
+
+          <!-- Reset Filters -->
+          <div class="filter-bar__item" style="justify-content:flex-end; padding-top:18px;">
+            <button id="overview-reset-filters-btn"
+                    class="filter-bar__reset-btn"
+                    type="button"
+                    aria-label="Reset all filters to default">
+              ✕ Reset
+            </button>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- ── ROW 2: DATA TABLES ─────────────────────────────────────────────── -->
+  <section aria-label="Headcount breakdown tables">
+    <div class="data-grid">
+
+      <!-- Table 1: Country HeadCount -->
+      <div class="table-card" role="region" aria-labelledby="table-country-title">
+        <div class="table-card__header">
+          <h2 id="table-country-title" class="table-card__title">
+            🌍 Country Headcount
+          </h2>
+          <span id="country-table-count" class="table-card__count">0</span>
+        </div>
+        <div class="table-card__body" role="region" aria-label="Country headcount data">
+          <table class="data-table" aria-label="Headcount by country">
+            <thead>
+              <tr>
+                <th scope="col">#</th>
+                <th scope="col">Country</th>
+                <th scope="col">Head Count</th>
+              </tr>
+            </thead>
+            <tbody id="country-table-body">
+              <tr>
+                <td colspan="3">
+                  <div class="skeleton" style="height:36px; margin:4px 8px;"></div>
+                </td>
+              </tr>
+              <tr>
+                <td colspan="3">
+                  <div class="skeleton" style="height:36px; margin:4px 8px;"></div>
+                </td>
+              </tr>
+              <tr>
+                <td colspan="3">
+                  <div class="skeleton" style="height:36px; margin:4px 8px;"></div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Table 2: Department HeadCount -->
+      <div class="table-card" role="region" aria-labelledby="table-dept-title">
+        <div class="table-card__header">
+          <h2 id="table-dept-title" class="table-card__title">
+            🏢 Department Headcount
+          </h2>
+          <span id="dept-table-count" class="table-card__count">0</span>
+        </div>
+        <div class="table-card__body" role="region" aria-label="Department headcount data">
+          <table class="data-table" aria-label="Headcount by department">
+            <thead>
+              <tr>
+                <th scope="col">#</th>
+                <th scope="col">Department</th>
+                <th scope="col">Head Count</th>
+              </tr>
+            </thead>
+            <tbody id="dept-table-body">
+              <tr>
+                <td colspan="3">
+                  <div class="skeleton" style="height:36px; margin:4px 8px;"></div>
+                </td>
+              </tr>
+              <tr>
+                <td colspan="3">
+                  <div class="skeleton" style="height:36px; margin:4px 8px;"></div>
+                </td>
+              </tr>
+              <tr>
+                <td colspan="3">
+                  <div class="skeleton" style="height:36px; margin:4px 8px;"></div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Table 3: Top Nationalities -->
+      <div class="table-card" role="region" aria-labelledby="table-nat-title">
+        <div class="table-card__header">
+          <h2 id="table-nat-title" class="table-card__title">
+            🏳 Top Nationalities
+          </h2>
+          <span id="nat-table-count" class="table-card__count">Top 15</span>
+        </div>
+        <div class="table-card__body" role="region" aria-label="Top nationalities data">
+          <table class="data-table" aria-label="Top 15 nationalities by headcount">
+            <thead>
+              <tr>
+                <th scope="col">#</th>
+                <th scope="col">Nationality</th>
+                <th scope="col">Head Count</th>
+              </tr>
+            </thead>
+            <tbody id="nat-table-body">
+              <tr>
+                <td colspan="3">
+                  <div class="skeleton" style="height:36px; margin:4px 8px;"></div>
+                </td>
+              </tr>
+              <tr>
+                <td colspan="3">
+                  <div class="skeleton" style="height:36px; margin:4px 8px;"></div>
+                </td>
+              </tr>
+              <tr>
+                <td colspan="3">
+                  <div class="skeleton" style="height:36px; margin:4px 8px;"></div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── ROW 3: INTERACTIVE MAP ─────────────────────────────────────────── -->
+  <section aria-labelledby="map-title">
+    <div class="map-card">
+      <div class="map-card__header">
+        <h2 id="map-title" class="map-card__title">
+          🗺 Workforce Distribution Map — Middle East &amp; Africa
+        </h2>
+        <span class="badge badge--gold" aria-label="Interactive map">Interactive</span>
+      </div>
+      <div id="map"
+           role="application"
+           aria-label="Interactive map showing EDECS workforce distribution across Egypt, KSA, UAE, Oman, Tanzania and Angola">
+        <!-- Leaflet.js renders here -->
+      </div>
+    </div>
+  </section>
+
+</div>

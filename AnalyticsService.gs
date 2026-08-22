@@ -1,0 +1,199 @@
+/**
+ * @fileoverview Analytics engine for EDECS HR Dashboard.
+ *
+ * Implements:
+ * - Nationalization rate calculation using the correct join path:
+ *     Employee → NationalityKey → Nationality.CountryKey (NOT name comparison)
+ * - Nationalization compliance status classification
+ * - Hiring trend aggregation (year / quarter / month granularity)
+ *
+ * @author EDECS HR Systems
+ * @version 1.0.0
+ */
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NATIONALIZATION ANALYTICS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Calculates the nationalization rate for a single country.
+ *
+ * CORRECT LOGIC (per spec):
+ *   For each ACTIVE employee in the target country:
+ *     → Resolve their NationalityKey → Nationality object
+ *     → Check if Nationality.CountryKey === targetCountryKey
+ *     → If yes, they are a national of that country
+ *
+ * NEVER compare Nationality.Name === Country.Name directly.
+ *
+ * @param {Array<EmployeeRecord>}              employees       Full employee array
+ * @param {Object.<string, NationalityRecord>} nationalityMap  Keyed by NationalityKey
+ * @param {string}                             targetCountryKey  The country to evaluate
+ * @returns {{ nationalCount: number, totalActive: number, rate: number }}
+ */
+function calculateNationalizationRate(employees, nationalityMap, targetCountryKey) {
+  let totalActive   = 0;
+  let nationalCount = 0;
+
+  employees.forEach(emp => {
+    // Only count active employees assigned to the target country
+    if (!emp.isActive || emp.countryKey !== targetCountryKey) return;
+
+    totalActive++;
+
+    // Resolve nationality and check its country affiliation
+    const nat = nationalityMap[emp.nationalityKey];
+    if (nat && nat.countryKey === targetCountryKey) {
+      nationalCount++;
+    }
+  });
+
+  const rate = totalActive > 0
+    ? (nationalCount / totalActive) * 100
+    : 0;
+
+  return { nationalCount, totalActive, rate };
+}
+
+/**
+ * Classifies nationalization compliance based on variance from target.
+ *
+ * Thresholds (using CONFIG.NEAR_TARGET_THRESHOLD = ±2%):
+ *   variance >= +2%  → "Above Target"  (green)
+ *   -2% <= var < +2% → "Near Target"   (amber)
+ *   variance < -2%   → "Below Target"  (red)
+ *
+ * @param {number} actual   Current nationalization percentage
+ * @param {number} target   Target nationalization percentage
+ * @returns {'Above Target'|'Near Target'|'Below Target'}
+ */
+function classifyNationalizationStatus(actual, target) {
+  const variance = actual - target;
+  const threshold = CONFIG.NEAR_TARGET_THRESHOLD;
+
+  if (variance >= threshold)   return 'Above Target';
+  if (variance >= -threshold)  return 'Near Target';
+  return 'Below Target';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HIRING TREND ANALYTICS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Builds hiring trend data for the multi-line Chart.js chart.
+ *
+ * Generates Chart.js-compatible datasets grouped by time period per country.
+ * All countries are included unless countryFilter is specified.
+ *
+ * @param {Array<EmployeeRecord>}          employees      Full employee array
+ * @param {Object.<string, CountryRecord>} countryMap     Keyed by CountryKey
+ * @param {'year'|'quarter'|'month'}       granularity    Time grouping
+ * @param {string|null}                    countryFilter  Country name or null for all
+ * @returns {{ labels: string[], datasets: Array<HiringDataset> }}
+ */
+function buildHiringTrend(employees, countryMap, granularity, countryFilter) {
+  const currentYear = new Date().getFullYear();
+  const startYear   = CONFIG.HIRING_START_YEAR;
+
+  // Resolve target country keys
+  const countryEntries = Object.values(countryMap).filter(c => {
+    return !countryFilter || c.name === countryFilter;
+  });
+
+  // Build time labels
+  const labels = _buildTimeLabels(granularity, startYear, currentYear);
+
+  // Initialize data accumulator: { countryKey: { label: count } }
+  const dataAcc = {};
+  countryEntries.forEach(c => {
+    dataAcc[c.key] = {};
+    labels.forEach(lbl => { dataAcc[c.key][lbl] = 0; });
+  });
+
+  const targetKeys = new Set(countryEntries.map(c => c.key));
+
+  // Accumulate hire counts
+  employees.forEach(emp => {
+    if (!targetKeys.has(emp.countryKey)) return;
+
+    const year = getHireYear(emp.hireDateKey);
+    if (!year || year < startYear || year > currentYear) return;
+
+    const label = _buildLabel(granularity, emp.hireDateKey, year);
+    if (!label) return;
+
+    if (dataAcc[emp.countryKey] && dataAcc[emp.countryKey][label] !== undefined) {
+      dataAcc[emp.countryKey][label]++;
+    }
+  });
+
+  // Build Chart.js dataset array
+  const datasets = countryEntries.map(c => ({
+    label: c.name,
+    color: CONFIG.CHART_COLORS[c.name] || '#888888',
+    data:  labels.map(lbl => dataAcc[c.key][lbl] || 0)
+  }));
+
+  return { labels, datasets };
+}
+
+/**
+ * Generates the full array of time period labels for the chart X-axis.
+ *
+ * @param {'year'|'quarter'|'month'} granularity
+ * @param {number} startYear
+ * @param {number} endYear
+ * @returns {string[]}
+ */
+function _buildTimeLabels(granularity, startYear, endYear) {
+  const labels = [];
+
+  for (let y = startYear; y <= endYear; y++) {
+    if (granularity === 'year') {
+      labels.push(String(y));
+    } else if (granularity === 'quarter') {
+      for (let q = 1; q <= 4; q++) {
+        labels.push(`${y} Q${q}`);
+      }
+    } else { // month
+      for (let m = 1; m <= 12; m++) {
+        labels.push(`${y}-${String(m).padStart(2, '0')}`);
+      }
+    }
+  }
+
+  return labels;
+}
+
+/**
+ * Builds the label key for a specific employee's hire period.
+ *
+ * @param {'year'|'quarter'|'month'} granularity
+ * @param {string} hireDateKey  DDMMYYYY formatted string
+ * @param {number} year
+ * @returns {string|null}
+ */
+function _buildLabel(granularity, hireDateKey, year) {
+  if (granularity === 'year') return String(year);
+
+  if (granularity === 'quarter') {
+    const q = getHireQuarter(hireDateKey);
+    return q ? `${year} Q${q}` : null;
+  }
+
+  // month
+  const m = getHireMonth(hireDateKey);
+  return m ? `${year}-${String(m).padStart(2, '0')}` : null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TYPE DEFINITIONS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * @typedef {Object} HiringDataset
+ * @property {string}   label  Country name
+ * @property {string}   color  Hex color
+ * @property {number[]} data   Array of hire counts matching labels array
+ */

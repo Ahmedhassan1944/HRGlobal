@@ -1,0 +1,896 @@
+<script>
+'use strict';
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   EDECS HR DASHBOARD — CLIENT-SIDE APPLICATION
+   Architecture:
+     AppState       — Single source of truth for application state
+     GASClient      — google.script.run Promise wrapper
+     Router         — SPA-style page switching (no reload)
+     LoadingManager — Skeleton / spinner orchestration
+     FilterManager  — Dropdown wiring and filter change handling
+     OverviewCtrl   — Page 1: tables, KPI, map rendering
+     NatCtrl        — Page 2: nat cards, hiring chart
+     MapRenderer    — Leaflet.js interactive map
+     ChartRenderer  — Chart.js multi-line hiring trend
+     ErrorManager   — Error banner management
+     App            — Bootstrap / initialization
+════════════════════════════════════════════════════════════════════════════ */
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 1. APP STATE
+// ─────────────────────────────────────────────────────────────────────────────
+
+const AppState = (() => {
+  let _state = {
+    activePage:       'overview',
+    overviewFilter:   { country: 'All', department: 'All' },
+    natCountryFilter: 'All',
+    chartCountryFilter:'All',
+    chartGranularity: 'year',
+    dashboardData:    null,   // full payload from getDashboardData()
+    isLoading:        false,
+    dataLoadedAt:     null
+  };
+
+  return {
+    get(key)       { return _state[key]; },
+    set(key, val)  { _state[key] = val; },
+    getAll()       { return { ..._state }; },
+    setOverviewFilter(field, val) {
+      _state.overviewFilter = { ..._state.overviewFilter, [field]: val };
+    },
+    resetOverviewFilters() {
+      _state.overviewFilter = { country: 'All', department: 'All' };
+    }
+  };
+})();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 2. GAS CLIENT — Promise wrapper for google.script.run
+// ─────────────────────────────────────────────────────────────────────────────
+
+const GASClient = {
+  /**
+   * Wraps a google.script.run call in a Promise.
+   * @param {string}    fnName   Server function name
+   * @param {...*}      args     Arguments to pass
+   * @returns {Promise<*>}
+   */
+  call(fnName, ...args) {
+    return new Promise((resolve, reject) => {
+      try {
+        let runner = google.script.run
+          .withSuccessHandler(result => {
+            if (result && result.success === false) {
+              reject(new Error(result.error || 'Server returned failure'));
+            } else {
+              resolve(result);
+            }
+          })
+          .withFailureHandler(err => {
+            reject(new Error(err.message || 'Server error'));
+          });
+
+        // Dynamically call the server function by name with args
+        runner[fnName](...args);
+      } catch (e) {
+        reject(new Error(`GASClient.call failed for "${fnName}": ${e.message}`));
+      }
+    });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 3. ERROR MANAGER
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ErrorManager = {
+  show(message) {
+    const banner  = document.getElementById('error-banner');
+    const msgEl   = document.getElementById('error-banner-message');
+    if (!banner || !msgEl) return;
+    msgEl.textContent = message || 'Unable to load dashboard. Please contact administrator.';
+    banner.hidden = false;
+  },
+  hide() {
+    const banner = document.getElementById('error-banner');
+    if (banner) banner.hidden = true;
+  },
+  init() {
+    const btn = document.getElementById('error-dismiss-btn');
+    btn?.addEventListener('click', () => this.hide());
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 4. LOADING MANAGER
+// ─────────────────────────────────────────────────────────────────────────────
+
+const LoadingManager = {
+  hideLoadingScreen() {
+    const screen = document.getElementById('loading-screen');
+    if (!screen) return;
+    screen.classList.add('is-hiding');
+    setTimeout(() => {
+      screen.style.display = 'none';
+      const app = document.getElementById('app');
+      if (app) {
+        app.hidden = false;
+        app.removeAttribute('aria-hidden');
+      }
+    }, 400);
+  },
+
+  setKpiLoading(elementId, loading) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    el.classList.toggle('is-loading', loading);
+  },
+
+  setTableLoading(tbodyId, columns) {
+    const tbody = document.getElementById(tbodyId);
+    if (!tbody) return;
+    tbody.innerHTML = [1, 2, 3].map(() => `
+      <tr>
+        <td colspan="${columns}">
+          <div class="skeleton" style="height:36px; margin:4px 8px;"></div>
+        </td>
+      </tr>
+    `).join('');
+  },
+
+  showChartLoading() {
+    const skeleton = document.getElementById('hiring-chart-skeleton');
+    const canvas   = document.getElementById('hiring-chart');
+    if (skeleton) skeleton.style.display = 'block';
+    if (canvas)   canvas.style.display   = 'none';
+  },
+
+  hideChartLoading() {
+    const skeleton = document.getElementById('hiring-chart-skeleton');
+    const canvas   = document.getElementById('hiring-chart');
+    if (skeleton) skeleton.style.display = 'none';
+    if (canvas)   canvas.style.display   = 'block';
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 5. ROUTER — SPA page switching
+// ─────────────────────────────────────────────────────────────────────────────
+
+const Router = {
+  navigate(page) {
+    const pages = ['overview', 'nationalization'];
+    pages.forEach(p => {
+      const pageEl = document.getElementById(`page-${p}`);
+      const tabEl  = document.getElementById(`tab-${p}`);
+      const isActive = p === page;
+
+      if (pageEl) {
+        pageEl.hidden = !isActive;
+        pageEl.setAttribute('aria-hidden', String(!isActive));
+      }
+      if (tabEl) {
+        tabEl.classList.toggle('is-active', isActive);
+        tabEl.setAttribute('aria-selected', String(isActive));
+      }
+    });
+
+    AppState.set('activePage', page);
+
+    // Invalidate and re-render Leaflet map when switching back to overview
+    if (page === 'overview' && MapRenderer.map) {
+      setTimeout(() => MapRenderer.map.invalidateSize(), 100);
+    }
+  },
+
+  init() {
+    document.querySelectorAll('.navbar__tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        const page = tab.dataset.page;
+        if (page) this.navigate(page);
+      });
+    });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 6. FILTER MANAGER
+// ─────────────────────────────────────────────────────────────────────────────
+
+const FilterManager = {
+  populateDropdown(selectId, options, defaultLabel) {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+    const firstOption = select.options[0];
+    select.innerHTML = '';
+    if (firstOption) select.appendChild(firstOption);
+
+    options.forEach(opt => {
+      const el = document.createElement('option');
+      el.value       = opt;
+      el.textContent = opt;
+      select.appendChild(el);
+    });
+  },
+
+  setDropdownValue(selectId, value) {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+    select.value = value || 'All';
+  },
+
+  init(filterOptions) {
+    // Populate Overview filters
+    this.populateDropdown('filter-country',    filterOptions.countries,    'All Countries');
+    this.populateDropdown('filter-department', filterOptions.departments,  'All Departments');
+
+    // Overview country filter
+    document.getElementById('filter-country')?.addEventListener('change', e => {
+      AppState.setOverviewFilter('country', e.target.value);
+      OverviewCtrl.applyFilters();
+    });
+
+    // Overview department filter
+    document.getElementById('filter-department')?.addEventListener('change', e => {
+      AppState.setOverviewFilter('department', e.target.value);
+      OverviewCtrl.applyFilters();
+    });
+
+    // Overview reset filters
+    document.getElementById('overview-reset-filters-btn')?.addEventListener('click', () => {
+      AppState.resetOverviewFilters();
+      this.setDropdownValue('filter-country', 'All');
+      this.setDropdownValue('filter-department', 'All');
+      OverviewCtrl.applyFilters();
+    });
+
+    // Nationalization country filter
+    document.getElementById('nat-filter-country')?.addEventListener('change', e => {
+      AppState.set('natCountryFilter', e.target.value);
+      NatCtrl.applyCountryFilter(e.target.value);
+    });
+
+    // Chart country filter
+    document.getElementById('chart-filter-country')?.addEventListener('change', e => {
+      AppState.set('chartCountryFilter', e.target.value);
+      ChartRenderer.reload(AppState.get('chartGranularity'), e.target.value);
+    });
+
+    // Granularity buttons
+    document.querySelectorAll('.granularity-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.granularity-btn').forEach(b => {
+          b.classList.remove('is-active');
+          b.setAttribute('aria-pressed', 'false');
+        });
+        btn.classList.add('is-active');
+        btn.setAttribute('aria-pressed', 'true');
+        const gran = btn.dataset.granularity;
+        AppState.set('chartGranularity', gran);
+        ChartRenderer.reload(gran, AppState.get('chartCountryFilter'));
+      });
+    });
+
+    // Navbar refresh button
+    document.getElementById('navbar-refresh-btn')?.addEventListener('click', async () => {
+      const btn = document.getElementById('navbar-refresh-btn');
+      if (btn) {
+        btn.classList.add('is-loading');
+        btn.textContent = '↻ Refreshing...';
+      }
+      try {
+        await GASClient.call('refreshCache');
+        await App.loadDashboardData();
+      } catch (e) {
+        ErrorManager.show(`Refresh failed: ${e.message}`);
+      } finally {
+        if (btn) {
+          btn.classList.remove('is-loading');
+          btn.innerHTML = '<span class="refresh-icon" aria-hidden="true">↻</span> Refresh';
+        }
+      }
+    });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 7. OVERVIEW CONTROLLER
+// ─────────────────────────────────────────────────────────────────────────────
+
+const OverviewCtrl = {
+  /**
+   * Renders Overview from cached payload (no server call).
+   * @param {OverviewPayload} overview
+   */
+  render(overview) {
+    this._renderKpi(overview.headCount, overview.countryTable);
+    this._renderTable('country-table-body', overview.countryTable, 'country-table-count');
+    this._renderTable('dept-table-body',    overview.deptTable,    'dept-table-count');
+    this._renderTable('nat-table-body',     overview.nationalityTable, 'nat-table-count');
+    MapRenderer.updatePins(overview.mapPins);
+  },
+
+  /**
+   * Re-fetches filtered data from the server and re-renders.
+   */
+  async applyFilters() {
+    const filters = AppState.get('overviewFilter');
+    LoadingManager.setKpiLoading('overview-headcount', true);
+    LoadingManager.setTableLoading('country-table-body', 3);
+    LoadingManager.setTableLoading('dept-table-body', 3);
+    LoadingManager.setTableLoading('nat-table-body', 3);
+
+    try {
+      const res = await GASClient.call('getOverviewData', filters);
+      if (!res.success) throw new Error(res.error);
+      this.render(res.overview);
+
+      // Update country context badge
+      const ctx = document.getElementById('overview-country-context');
+      if (ctx) ctx.textContent = filters.country !== 'All' ? filters.country : 'All Countries';
+
+    } catch (e) {
+      ErrorManager.show(`Failed to apply filters: ${e.message}`);
+    } finally {
+      LoadingManager.setKpiLoading('overview-headcount', false);
+    }
+  },
+
+  _renderKpi(headCount, countryTable) {
+    const el = document.getElementById('overview-headcount');
+    if (el) {
+      el.textContent = _formatNumber(headCount);
+      el.classList.remove('is-loading');
+    }
+
+    // Mini breakdown
+    const breakdown = document.getElementById('overview-kpi-breakdown');
+    if (breakdown && countryTable?.length) {
+      breakdown.innerHTML = countryTable.slice(0, 4).map(row => `
+        <div style="display:flex; align-items:center; gap:6px; font-size:var(--text-xs);">
+          <span style="color:var(--color-text-muted);">${_escHtml(row.name)}</span>
+          <span style="font-weight:700; color:var(--color-text-kpi);">${_formatNumber(row.count)}</span>
+        </div>
+      `).join('');
+    }
+  },
+
+  _renderTable(tbodyId, rows, countId) {
+    const tbody = document.getElementById(tbodyId);
+    if (!tbody) return;
+
+    if (!rows || rows.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="3" style="padding:0;">
+            <div class="empty-state">
+              <div class="empty-state__icon">🔍</div>
+              <div class="empty-state__title">No Data Found</div>
+              <div class="empty-state__subtitle">Try changing filters</div>
+            </div>
+          </td>
+        </tr>`;
+      const countEl = document.getElementById(countId);
+      if (countEl) countEl.textContent = '0';
+      return;
+    }
+
+    tbody.innerHTML = rows.map((row, i) => `
+      <tr>
+        <td><span class="data-table__rank">${i + 1}</span></td>
+        <td title="${_escHtml(row.name)}">${_escHtml(row.name)}</td>
+        <td>${_formatNumber(row.count)}</td>
+      </tr>
+    `).join('');
+
+    const countEl = document.getElementById(countId);
+    if (countEl) countEl.textContent = _formatNumber(rows.length);
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 8. NATIONALIZATION CONTROLLER
+// ─────────────────────────────────────────────────────────────────────────────
+
+const NatCtrl = {
+  _allCards: [],  // store full card set for client-side filtering
+
+  /**
+   * Renders the nationalization page from payload.
+   * @param {NationalizationPayload} nat
+   */
+  render(nat) {
+    this._allCards = nat.cards || [];
+
+    // KPI
+    const kpiEl = document.getElementById('nat-headcount');
+    if (kpiEl) {
+      kpiEl.textContent = _formatNumber(nat.headCount);
+      kpiEl.classList.remove('is-loading');
+    }
+
+    this._renderCards(this._allCards);
+  },
+
+  /**
+   * Filters displayed cards by country name.
+   * @param {string} countryName
+   */
+  applyCountryFilter(countryName) {
+    const filtered = countryName === 'All' || !countryName
+      ? this._allCards
+      : this._allCards.filter(c => c.countryName === countryName);
+    this._renderCards(filtered);
+  },
+
+  _renderCards(cards) {
+    const grid = document.getElementById('nat-cards-grid');
+    if (!grid) return;
+
+    if (!cards || cards.length === 0) {
+      grid.innerHTML = `
+        <div style="grid-column:1/-1;">
+          <div class="empty-state">
+            <div class="empty-state__icon">🔍</div>
+            <div class="empty-state__title">No Data Found</div>
+            <div class="empty-state__subtitle">Try changing the country filter</div>
+          </div>
+        </div>`;
+      return;
+    }
+
+    grid.innerHTML = cards.map(card => this._buildCard(card)).join('');
+  },
+
+  _buildCard(card) {
+    const statusClass = this._statusClass(card.status);
+    const cardClass   = this._cardClass(card.status);
+    const flag        = _countryFlag(card.countryName);
+    const pctDisplay  = `${card.actualPct.toFixed(2)}%`;
+    const targetDisplay = card.targetPct !== null ? `${card.targetPct.toFixed(1)}%` : 'N/A';
+
+    let varianceBadge = '';
+    if (card.variance !== null) {
+      const v     = card.variance;
+      const sign  = v > 0 ? '+' : '';
+      const cls   = v > 0 ? 'positive' : v < 0 ? 'negative' : 'neutral';
+      varianceBadge = `
+        <span class="nat-card__variance nat-card__variance--${cls}" aria-label="Variance ${sign}${v.toFixed(2)}%">
+          ${sign}${v.toFixed(2)}%
+        </span>`;
+    }
+
+    return `
+      <article class="nat-card ${cardClass}"
+               aria-label="${_escHtml(card.countryName)} nationalization card">
+        <div class="nat-card__header">
+          <h3 class="nat-card__country">${_escHtml(card.countryName)}</h3>
+          <span class="nat-card__flag" aria-hidden="true">${flag}</span>
+        </div>
+
+        <div class="nat-card__pct-row">
+          <span class="nat-card__pct" aria-label="Nationalization rate ${pctDisplay}">
+            ${pctDisplay}
+          </span>
+          <span class="nat-card__pct-label">Nationalization Rate</span>
+          ${varianceBadge}
+        </div>
+
+        <div class="nat-card__stats">
+          <div class="nat-card__stat">
+            <span class="nat-card__stat-label">National</span>
+            <span class="nat-card__stat-value">${_formatNumber(card.nationalCount)}</span>
+          </div>
+          <div class="nat-card__stat">
+            <span class="nat-card__stat-label">Total Active</span>
+            <span class="nat-card__stat-value">${_formatNumber(card.totalActive)}</span>
+          </div>
+          <div class="nat-card__stat">
+            <span class="nat-card__stat-label">Target</span>
+            <span class="nat-card__stat-value">${targetDisplay}</span>
+          </div>
+          <div class="nat-card__stat">
+            <span class="nat-card__stat-label">Program</span>
+            <span class="nat-card__stat-value">${card.applicable ? 'Active' : 'N/A'}</span>
+          </div>
+        </div>
+
+        <span class="nat-card__status ${statusClass}"
+              role="status"
+              aria-label="Status: ${_escHtml(card.status)}">
+          ${_statusIcon(card.status)} ${_escHtml(card.status)}
+        </span>
+      </article>
+    `;
+  },
+
+  _statusClass(status) {
+    const map = {
+      'Above Target':  'nat-card__status--above',
+      'Near Target':   'nat-card__status--near',
+      'Below Target':  'nat-card__status--below',
+      'N/A':           'nat-card__status--na'
+    };
+    return map[status] || 'nat-card__status--na';
+  },
+
+  _cardClass(status) {
+    const map = {
+      'Above Target': 'nat-card--above-target',
+      'Near Target':  'nat-card--near-target',
+      'Below Target': 'nat-card--below-target',
+      'N/A':          'nat-card--na'
+    };
+    return map[status] || 'nat-card--na';
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 9. MAP RENDERER — Leaflet.js
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MapRenderer = {
+  map:     null,
+  markers: [],
+
+  init() {
+    if (typeof L === 'undefined') {
+      console.warn('Leaflet.js not loaded — map disabled');
+      return;
+    }
+
+    this.map = L.map('map', {
+      center:       [15, 38],  // Center on Middle East & Africa region
+      zoom:         4,
+      zoomControl:  true,
+      scrollWheelZoom: false
+    });
+
+    // CartoDB Dark Matter tiles — no API key required, works in GAS sandbox
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      subdomains:  'abcd',
+      maxZoom:     19
+    }).addTo(this.map);
+  },
+
+  /**
+   * Updates or creates map pins from server payload.
+   * @param {MapPin[]} pins
+   */
+  updatePins(pins) {
+    if (!this.map || !pins) return;
+
+    // Remove existing markers
+    this.markers.forEach(m => m.remove());
+    this.markers = [];
+
+    pins.forEach(pin => {
+      if (pin.lat === null || pin.lng === null || !pin.headCount) return;
+
+      // Circle marker sized by headcount
+      const radius   = Math.max(12, Math.min(40, Math.sqrt(pin.headCount) * 0.8));
+      const marker   = L.circleMarker([pin.lat, pin.lng], {
+        radius:      radius,
+        fillColor:   pin.color,
+        color:       '#D4A017',
+        weight:      2,
+        opacity:     0.9,
+        fillOpacity: 0.75
+      });
+
+      marker.bindPopup(`
+        <div style="font-family:'Inter',sans-serif; min-width:140px;">
+          <div style="font-size:1rem; font-weight:700; color:#D4A017; margin-bottom:4px;">
+            ${_escHtml(pin.countryName)}
+          </div>
+          <div style="font-size:1.5rem; font-weight:800; color:#17A2B8;">
+            ${_formatNumber(pin.headCount)}
+          </div>
+          <div style="font-size:0.75rem; color:#A8B2C1; margin-top:2px;">Active Employees</div>
+        </div>
+      `, { maxWidth: 200 });
+
+      marker.bindTooltip(`${pin.countryName}: ${_formatNumber(pin.headCount)}`, {
+        permanent:  false,
+        direction:  'top',
+        className:  'leaflet-tooltip-custom'
+      });
+
+      marker.addTo(this.map);
+      this.markers.push(marker);
+    });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 10. CHART RENDERER — Chart.js multi-line hiring trend
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ChartRenderer = {
+  chart: null,
+
+  /**
+   * Builds the hiring trend chart from trend payload.
+   * @param {{ labels: string[], datasets: HiringDataset[] }} trend
+   */
+  render(trend) {
+    const canvas = document.getElementById('hiring-chart');
+    if (!canvas || typeof Chart === 'undefined') return;
+
+    // Destroy existing chart instance if present
+    if (this.chart) {
+      this.chart.destroy();
+      this.chart = null;
+    }
+
+    const datasets = trend.datasets.map(ds => ({
+      label:           ds.label,
+      data:            ds.data,
+      borderColor:     ds.color,
+      backgroundColor: ds.color + '18',
+      borderWidth:     2.5,
+      pointRadius:     0,
+      pointHoverRadius:5,
+      fill:            false,
+      tension:         0.3
+    }));
+
+    const ctx = canvas.getContext('2d');
+    this.chart = new Chart(ctx, {
+      type: 'line',
+      data: { labels: trend.labels, datasets },
+      options: {
+        responsive:          true,
+        maintainAspectRatio: true,
+        aspectRatio:         3.5,
+        interaction: {
+          mode:        'index',
+          intersect:   false
+        },
+        plugins: {
+          legend: {
+            display:  true,
+            position: 'top',
+            labels: {
+              color:      '#A8B2C1',
+              font:       { family: "'Inter', sans-serif", size: 12, weight: '600' },
+              boxWidth:   14,
+              padding:    16,
+              usePointStyle: true,
+              pointStyle: 'circle'
+            }
+          },
+          tooltip: {
+            backgroundColor: '#1A2232',
+            titleColor:      '#E5C158',
+            bodyColor:       '#F0F4F8',
+            borderColor:     '#D4A017',
+            borderWidth:     1,
+            padding:         12,
+            titleFont:       { family: "'Outfit', sans-serif", size: 13, weight: '700' },
+            bodyFont:        { family: "'Inter', sans-serif", size: 12 },
+            callbacks: {
+              label: ctx => ` ${ctx.dataset.label}: ${_formatNumber(ctx.parsed.y)}`
+            }
+          }
+        },
+        scales: {
+          x: {
+            ticks: {
+              color:     '#6C757D',
+              font:      { size: 11 },
+              maxRotation: 45,
+              autoSkip:  true,
+              maxTicksLimit: 20
+            },
+            grid: {
+              color:     'rgba(255,255,255,0.04)',
+              drawBorder: false
+            }
+          },
+          y: {
+            ticks: {
+              color:    '#6C757D',
+              font:     { size: 11 },
+              callback: val => _formatNumber(val)
+            },
+            grid: {
+              color:     'rgba(255,255,255,0.06)',
+              drawBorder: false
+            },
+            beginAtZero: true
+          }
+        },
+        animation: {
+          duration: 600,
+          easing:   'easeInOutQuart'
+        }
+      }
+    });
+
+    LoadingManager.hideChartLoading();
+  },
+
+  /**
+   * Fetches new trend data and re-renders the chart.
+   * @param {string}      granularity
+   * @param {string|null} countryFilter
+   */
+  async reload(granularity, countryFilter) {
+    LoadingManager.showChartLoading();
+    try {
+      const res = await GASClient.call(
+        'getHiringTrend',
+        granularity,
+        countryFilter === 'All' ? null : countryFilter
+      );
+      if (!res.success) throw new Error(res.error);
+      this.render(res.trend);
+    } catch (e) {
+      LoadingManager.hideChartLoading();
+      ErrorManager.show(`Chart load failed: ${e.message}`);
+    }
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 11. UTILITY FUNCTIONS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Formats a number with locale thousands separators.
+ * @param {number} n
+ * @returns {string}
+ */
+function _formatNumber(n) {
+  if (n === null || n === undefined) return '—';
+  return Number(n).toLocaleString('en-US');
+}
+
+/**
+ * Escapes HTML special characters to prevent XSS.
+ * @param {string} str
+ * @returns {string}
+ */
+function _escHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g,  '&amp;')
+    .replace(/</g,  '&lt;')
+    .replace(/>/g,  '&gt;')
+    .replace(/"/g,  '&quot;')
+    .replace(/'/g,  '&#39;');
+}
+
+/**
+ * Returns a country flag emoji for display purposes.
+ * @param {string} countryName
+ * @returns {string}
+ */
+function _countryFlag(countryName) {
+  const flags = {
+    Egypt:    '🇪🇬',
+    KSA:      '🇸🇦',
+    UAE:      '🇦🇪',
+    Oman:     '🇴🇲',
+    Tanzania: '🇹🇿',
+    Angola:   '🇦🇴'
+  };
+  return flags[countryName] || '🌍';
+}
+
+/**
+ * Returns a status icon for nationalization status.
+ * @param {string} status
+ * @returns {string}
+ */
+function _statusIcon(status) {
+  const icons = {
+    'Above Target': '✅',
+    'Near Target':  '⚠️',
+    'Below Target': '❌',
+    'N/A':          'ℹ️'
+  };
+  return icons[status] || '—';
+}
+
+/**
+ * Formats an ISO timestamp to a readable date string.
+ * @param {string} isoString
+ * @returns {string}
+ */
+function _formatTimestamp(isoString) {
+  if (!isoString) return '—';
+  try {
+    const d = new Date(isoString);
+    return d.toLocaleDateString('en-GB', {
+      day:   '2-digit',
+      month: 'short',
+      year:  'numeric',
+      hour:  '2-digit',
+      minute:'2-digit'
+    });
+  } catch {
+    return isoString;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 12. APP BOOTSTRAP
+// ─────────────────────────────────────────────────────────────────────────────
+
+const App = {
+  async loadDashboardData() {
+    try {
+      const result = await GASClient.call('getDashboardData');
+
+      if (!result || !result.success) {
+        throw new Error(result?.error || 'Server returned an invalid response');
+      }
+
+      AppState.set('dashboardData', result);
+
+      // Update navbar metadata
+      const todayEl = document.getElementById('navbar-today');
+      if (todayEl) todayEl.textContent = result.meta?.today || '—';
+
+      const refreshEl = document.getElementById('navbar-refresh');
+      if (refreshEl) refreshEl.textContent = _formatTimestamp(result.meta?.loadedAt);
+
+      // Initialize filter dropdowns
+      FilterManager.init(result.filterOptions);
+
+      // Render Overview (Page 1)
+      OverviewCtrl.render(result.overview);
+
+      // Render Nationalization cards (Page 2)
+      NatCtrl.render(result.nationalization);
+
+      // Load hiring chart
+      LoadingManager.showChartLoading();
+      ChartRenderer.reload('year', null);
+
+      // Initialize map pins
+      MapRenderer.updatePins(result.overview.mapPins);
+
+    } catch (e) {
+      console.error('[App] loadDashboardData failed:', e.message);
+      ErrorManager.show(
+        'Unable to load dashboard. Please verify the Spreadsheet ID is configured correctly. ' +
+        `Error: ${e.message}`
+      );
+    }
+  },
+
+  async init() {
+    // Wire up error banner dismiss
+    ErrorManager.init();
+
+    // Wire up page router tabs
+    Router.init();
+
+    // Initialize map
+    MapRenderer.init();
+
+    // Load data from server
+    await this.loadDashboardData();
+
+    // Reveal app, hide loading screen
+    LoadingManager.hideLoadingScreen();
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13. ENTRY POINT — Wait for DOM ready
+// ─────────────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  App.init().catch(err => {
+    console.error('[App] Fatal init error:', err);
+    ErrorManager.show('Dashboard initialization failed. Please contact your administrator.');
+    LoadingManager.hideLoadingScreen();
+  });
+});
+</script>

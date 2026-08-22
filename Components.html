@@ -1,0 +1,73 @@
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     COMPONENTS.html — Shared UI Components
+     Contains: Navigation Bar, reusable country flag map
+════════════════════════════════════════════════════════════════════════════ -->
+
+<!-- ── NAVIGATION BAR ──────────────────────────────────────────────────────── -->
+<header>
+  <nav class="navbar" role="navigation" aria-label="Main navigation">
+
+    <!-- Brand -->
+    <div class="navbar__brand">
+      <div class="navbar__logo" aria-label="EDECS">
+        <svg width="110" height="36" viewBox="0 0 110 36" aria-hidden="true">
+          <text x="0" y="30"
+                font-family="Outfit, sans-serif"
+                font-size="30"
+                font-weight="800"
+                fill="#0077B6"
+                letter-spacing="2">EDECS</text>
+        </svg>
+      </div>
+      <div class="navbar__divider" aria-hidden="true"></div>
+      <span class="navbar__tagline">
+        EGYPT &nbsp;|&nbsp; KSA &nbsp;|&nbsp; UAE &nbsp;|&nbsp; OMAN &nbsp;|&nbsp; TANZANIA &nbsp;|&nbsp; ANGOLA
+      </span>
+    </div>
+
+    <!-- Page Tabs -->
+    <div class="navbar__nav" role="tablist" aria-label="Dashboard pages">
+      <button id="tab-overview"
+              class="navbar__tab is-active"
+              role="tab"
+              aria-selected="true"
+              aria-controls="page-overview"
+              data-page="overview"
+              type="button">
+        <span class="navbar__tab-icon" aria-hidden="true">📊</span>
+        HR Overview
+      </button>
+      <button id="tab-nationalization"
+              class="navbar__tab"
+              role="tab"
+              aria-selected="false"
+              aria-controls="page-nationalization"
+              data-page="nationalization"
+              type="button">
+        <span class="navbar__tab-icon" aria-hidden="true">🌍</span>
+        Nationalization &amp; Hiring
+      </button>
+    </div>
+
+    <!-- Meta Info -->
+    <div class="navbar__meta" aria-label="Dashboard metadata">
+      <div class="navbar__meta-item">
+        <span class="navbar__meta-label">Today</span>
+        <span id="navbar-today" class="navbar__meta-value">—</span>
+      </div>
+      <div class="navbar__meta-item">
+        <span class="navbar__meta-label">Last Refresh</span>
+        <span id="navbar-refresh" class="navbar__meta-value">—</span>
+      </div>
+      <button id="navbar-refresh-btn"
+              class="navbar__refresh-btn"
+              type="button"
+              aria-label="Refresh dashboard data"
+              title="Refresh Data">
+        <span class="refresh-icon" aria-hidden="true">↻</span>
+        Refresh
+      </button>
+    </div>
+
+  </nav>
+</header>

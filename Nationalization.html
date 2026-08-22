@@ -1,0 +1,170 @@
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     NATIONALIZATION.html — Page 2: Nationalization & Hiring Trends
+     Sections: KPI, Nat Rate Title, Country Cards Grid, Filter, Hiring Chart
+════════════════════════════════════════════════════════════════════════════ -->
+
+<div class="nat-layout">
+
+  <!-- ── ROW 1: HEAD COUNT KPI ──────────────────────────────────────────── -->
+  <section aria-labelledby="nat-kpi-label">
+    <div class="kpi-card" id="nat-kpi-card">
+      <div class="kpi-card__icon" aria-hidden="true">👥</div>
+      <div class="kpi-card__body">
+        <div id="nat-kpi-label" class="kpi-card__label">Total Active Employees</div>
+        <div id="nat-headcount"
+             class="kpi-card__value is-loading"
+             aria-live="polite"
+             aria-label="Total active employee headcount">
+          —
+        </div>
+        <div class="kpi-card__sub">Global Workforce · All Countries</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── ROW 2: SECTION TITLE + FILTER ─────────────────────────────────── -->
+  <section aria-label="Nationalization filters">
+    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem;">
+
+      <div class="section-header" style="margin-bottom:0;">
+        <h1 class="section-header__title">Nationalization Rate For Each Country</h1>
+        <p class="section-header__subtitle">
+          National employees as % of total active workforce per country
+        </p>
+      </div>
+
+      <!-- Country Filter -->
+      <div class="filter-bar" style="border:none; background:transparent; padding:0; gap:0.75rem;">
+        <label for="nat-filter-country" class="filter-bar__item-label" style="color:var(--color-brand-gold); font-weight:700; font-size:var(--text-xs); text-transform:uppercase; letter-spacing:0.08em;">
+          Country
+        </label>
+        <select id="nat-filter-country"
+                class="filter-bar__select"
+                aria-label="Filter nationalization cards by country">
+          <option value="All">All Countries</option>
+          <option value="Egypt">Egypt</option>
+          <option value="KSA">KSA</option>
+          <option value="UAE">UAE</option>
+          <option value="Oman">Oman</option>
+          <option value="Tanzania">Tanzania</option>
+          <option value="Angola">Angola</option>
+        </select>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── ROW 3: NATIONALIZATION CARDS GRID ─────────────────────────────── -->
+  <section aria-label="Nationalization rate cards by country">
+    <div id="nat-cards-grid" class="nat-grid" aria-live="polite" aria-label="Nationalization status cards">
+
+      <!-- Skeleton cards while loading -->
+      <div class="nat-card" aria-hidden="true">
+        <div class="skeleton" style="height:28px; width:60%; margin-bottom:16px;"></div>
+        <div class="skeleton" style="height:56px; width:40%; margin-bottom:12px;"></div>
+        <div class="skeleton" style="height:16px; margin-bottom:8px;"></div>
+        <div class="skeleton" style="height:16px; width:70%;"></div>
+      </div>
+      <div class="nat-card" aria-hidden="true">
+        <div class="skeleton" style="height:28px; width:60%; margin-bottom:16px;"></div>
+        <div class="skeleton" style="height:56px; width:40%; margin-bottom:12px;"></div>
+        <div class="skeleton" style="height:16px; margin-bottom:8px;"></div>
+        <div class="skeleton" style="height:16px; width:70%;"></div>
+      </div>
+      <div class="nat-card" aria-hidden="true">
+        <div class="skeleton" style="height:28px; width:60%; margin-bottom:16px;"></div>
+        <div class="skeleton" style="height:56px; width:40%; margin-bottom:12px;"></div>
+        <div class="skeleton" style="height:16px; margin-bottom:8px;"></div>
+        <div class="skeleton" style="height:16px; width:70%;"></div>
+      </div>
+      <div class="nat-card" aria-hidden="true">
+        <div class="skeleton" style="height:28px; width:60%; margin-bottom:16px;"></div>
+        <div class="skeleton" style="height:56px; width:40%; margin-bottom:12px;"></div>
+        <div class="skeleton" style="height:16px; margin-bottom:8px;"></div>
+        <div class="skeleton" style="height:16px; width:70%;"></div>
+      </div>
+      <div class="nat-card" aria-hidden="true">
+        <div class="skeleton" style="height:28px; width:60%; margin-bottom:16px;"></div>
+        <div class="skeleton" style="height:56px; width:40%; margin-bottom:12px;"></div>
+        <div class="skeleton" style="height:16px; margin-bottom:8px;"></div>
+        <div class="skeleton" style="height:16px; width:70%;"></div>
+      </div>
+      <div class="nat-card" aria-hidden="true">
+        <div class="skeleton" style="height:28px; width:60%; margin-bottom:16px;"></div>
+        <div class="skeleton" style="height:56px; width:40%; margin-bottom:12px;"></div>
+        <div class="skeleton" style="height:16px; margin-bottom:8px;"></div>
+        <div class="skeleton" style="height:16px; width:70%;"></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Divider -->
+  <div class="section-divider" aria-hidden="true"></div>
+
+  <!-- ── ROW 4: HIRING TREND CHART ─────────────────────────────────────── -->
+  <section aria-labelledby="hiring-chart-title">
+    <div class="chart-card">
+
+      <div class="chart-card__header">
+        <h2 id="hiring-chart-title" class="chart-card__title">
+          📈 Hiring Date For Each Country
+        </h2>
+
+        <!-- Granularity Controls + Country Filter -->
+        <div style="display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap;">
+
+          <!-- Country filter for chart -->
+          <select id="chart-filter-country"
+                  class="filter-bar__select"
+                  style="min-width:140px;"
+                  aria-label="Filter hiring chart by country">
+            <option value="All">All Countries</option>
+            <option value="Egypt">Egypt</option>
+            <option value="KSA">KSA</option>
+            <option value="UAE">UAE</option>
+            <option value="Oman">Oman</option>
+            <option value="Tanzania">Tanzania</option>
+            <option value="Angola">Angola</option>
+          </select>
+
+          <!-- Granularity Buttons -->
+          <div class="chart-card__controls" role="group" aria-label="Chart time granularity">
+            <button id="gran-year"
+                    class="granularity-btn is-active"
+                    type="button"
+                    data-granularity="year"
+                    aria-pressed="true">
+              Year
+            </button>
+            <button id="gran-quarter"
+                    class="granularity-btn"
+                    type="button"
+                    data-granularity="quarter"
+                    aria-pressed="false">
+              Quarter
+            </button>
+            <button id="gran-month"
+                    class="granularity-btn"
+                    type="button"
+                    data-granularity="month"
+                    aria-pressed="false">
+              Month
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="chart-card__body">
+        <div id="hiring-chart-skeleton" class="skeleton" style="height:320px;"></div>
+        <canvas id="hiring-chart"
+                style="display:none;"
+                aria-label="Multi-line hiring trend chart showing hires per country from 1995 to present"
+                role="img">
+        </canvas>
+      </div>
+
+    </div>
+  </section>
+
+</div>
