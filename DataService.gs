@@ -13,7 +13,10 @@
  * @version 1.0.0
  */
 
-const CACHE_KEY = 'EDECS_DASHBOARD_DATA';
+const CACHE_KEY        = 'EDECS_DASHBOARD_DATA';
+const CACHE_KEY_META   = 'EDECS_DASH_META';      // stores dims + metadata
+const CACHE_KEY_EMP    = 'EDECS_DASH_EMP_';      // prefix; chunks: _0, _1, ...
+const CACHE_CHUNK_SIZE = 85000;                  // 85 KB per chunk (under 100 KB limit)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PUBLIC API
@@ -26,21 +29,40 @@ const CACHE_KEY = 'EDECS_DASHBOARD_DATA';
  * @returns {DashboardData} Full data payload.
  */
 function getCachedData() {
-  const cache  = CacheService.getScriptCache();
-  const cached = cache.get(CACHE_KEY);
+  const cache   = CacheService.getScriptCache();
+  const metaRaw = cache.get(CACHE_KEY_META);
 
-  if (cached) {
-    AppLogger.info('DataService', 'getCachedData', 'Cache HIT — returning cached data');
+  if (metaRaw) {
     try {
-      return JSON.parse(cached);
-    } catch (parseErr) {
-      AppLogger.warn('DataService', 'getCachedData', `Cache parse failed: ${parseErr.message} — reloading`);
+      const meta = JSON.parse(metaRaw);
+      // Reassemble employee chunks
+      const chunks = [];
+      for (let i = 0; i < meta.empChunks; i++) {
+        const chunk = cache.get(CACHE_KEY_EMP + i);
+        if (!chunk) throw new Error(`Employee chunk ${i} missing from cache`);
+        chunks.push(chunk);
+      }
+      const employees = JSON.parse(chunks.join(''));
+      AppLogger.info('DataService', 'getCachedData',
+        `Cache HIT — ${employees.length} employees from ${meta.empChunks} chunk(s)`);
+      return {
+        countries:     meta.countries,
+        nationalities: meta.nationalities,
+        departments:   meta.departments,
+        empTypes:      meta.empTypes,
+        employees:     employees,
+        loadedAt:      meta.loadedAt
+      };
+    } catch (e) {
+      AppLogger.warn('DataService', 'getCachedData',
+        `Cache reassembly failed: ${e.message} — reloading from Sheets`);
     }
   }
 
   AppLogger.info('DataService', 'getCachedData', 'Cache MISS — loading from Google Sheets');
   return loadAllData();
 }
+
 
 /**
  * Forces a full reload from Google Sheets and refreshes CacheService.
@@ -110,31 +132,47 @@ function loadAllData() {
 }
 
 /**
- * Stores serialized data in CacheService.
- * Handles the 100 KB per-entry limit by chunking if necessary.
+ * Stores data in CacheService using a chunked strategy to work around
+ * the 100 KB per-entry limit.
+ *
+ * Strategy:
+ *  - Dimension tables (countries, nationalities, departments, empTypes)
+ *    are stored together in CACHE_KEY_META (always < 5 KB).
+ *  - Employee array JSON is split into 85 KB chunks stored as
+ *    CACHE_KEY_EMP_0, CACHE_KEY_EMP_1, etc.
  *
  * @param {DashboardData} data
  */
 function _persistToCache(data) {
   try {
-    const cache      = CacheService.getScriptCache();
-    const serialized = JSON.stringify(data);
-    const byteSize   = serialized.length;
+    const cache = CacheService.getScriptCache();
 
-    if (byteSize < 95000) {
-      // Single entry — most datasets fit here
-      cache.put(CACHE_KEY, serialized, CONFIG.CACHE_EXPIRY);
-      AppLogger.info('DataService', '_persistToCache',
-        `Cached in single entry: ${byteSize} bytes`);
-    } else {
-      // Dataset exceeds 95KB — cache without employees (dim tables only)
-      // Employees will be re-read on each request (acceptable trade-off)
-      const dimOnly = Object.assign({}, data, { employees: [] });
-      const dimSerialized = JSON.stringify(dimOnly);
-      cache.put(CACHE_KEY, dimSerialized, CONFIG.CACHE_EXPIRY);
-      AppLogger.warn('DataService', '_persistToCache',
-        `Dataset ${byteSize} bytes exceeds cache limit — caching dim tables only`);
+    // --- Serialize employees into chunks ---
+    const empJson   = JSON.stringify(data.employees);
+    const empChunks = [];
+    for (let i = 0; i < empJson.length; i += CACHE_CHUNK_SIZE) {
+      empChunks.push(empJson.substring(i, i + CACHE_CHUNK_SIZE));
     }
+
+    // --- Build meta object (dims + chunk count) ---
+    const meta = {
+      countries:     data.countries,
+      nationalities: data.nationalities,
+      departments:   data.departments,
+      empTypes:      data.empTypes,
+      loadedAt:      data.loadedAt,
+      empChunks:     empChunks.length
+    };
+
+    // --- Write everything to cache ---
+    cache.put(CACHE_KEY_META, JSON.stringify(meta), CONFIG.CACHE_EXPIRY);
+    empChunks.forEach((chunk, i) => {
+      cache.put(CACHE_KEY_EMP + i, chunk, CONFIG.CACHE_EXPIRY);
+    });
+
+    AppLogger.info('DataService', '_persistToCache',
+      `Cached: ${empJson.length} bytes of employees in ${empChunks.length} chunk(s)`);
+
   } catch (cacheErr) {
     AppLogger.warn('DataService', '_persistToCache',
       `Cache write failed (non-fatal): ${cacheErr.message}`);

@@ -1,23 +1,59 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="EDECS HR Workforce & Nationalization Dashboard — Internal Analytics Platform for Egypt, KSA, UAE, Oman, Tanzania, Angola">
+  <meta name="description"
+    content="EDECS HR Workforce & Nationalization Dashboard — Internal Analytics Platform for Egypt, KSA, UAE, Oman, Tanzania, Angola">
   <meta name="robots" content="noindex, nofollow">
   <title>EDECS HR Dashboard</title>
 
   <!-- Google Fonts: Inter (body) + Outfit (headings) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800&display=swap"
+    rel="stylesheet">
 
   <!-- Leaflet.js CSS (Interactive Map) -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
 
   <?!= include('Styles') ?>
+
+  <script>
+    'use strict';
+    // Global error handler
+    window.onerror = function(message, source, lineno, colno, error) {
+      var banner = document.getElementById('error-banner');
+      var msgEl  = document.getElementById('error-banner-message');
+      var loading = document.getElementById('loading-screen');
+      if (loading) loading.style.cssText = 'display:none !important;';
+      var app = document.getElementById('app');
+      if (app) { app.hidden = false; app.removeAttribute('aria-hidden'); app.style.visibility = 'visible'; }
+      if (banner && msgEl) {
+        msgEl.textContent = 'Global JS Error: ' + message + ' (Line: ' + lineno + ')';
+        banner.hidden = false;
+      }
+    };
+
+    // Nuclear fallback timeout: if nothing works after 12s, force-show the app
+    setTimeout(function() {
+      if (document.getElementById('app') && !document.getElementById('app').hidden) return; // App already visible
+      var screen = document.getElementById('loading-screen');
+      if (screen) screen.style.cssText = 'display:none !important;';
+      var app = document.getElementById('app');
+      if (app) { app.hidden = false; app.removeAttribute('aria-hidden'); app.style.visibility = 'visible'; }
+      var banner = document.getElementById('error-banner');
+      var msg    = document.getElementById('error-banner-message');
+      if (banner && msg) {
+        msg.textContent = 'Dashboard timed out. The data source might be too large, or an external script failed to load.';
+        banner.hidden = false;
+      }
+    }, 12000);
+  </script>
 </head>
+
 <body>
 
   <!-- ═══════════════════════════════════════════════════════════════════════
@@ -27,8 +63,8 @@
     <div class="loading-screen__inner">
       <div class="loading-screen__logo" aria-label="EDECS Logo">
         <svg width="140" height="44" viewBox="0 0 140 44" aria-hidden="true">
-          <text x="0" y="38" font-family="Outfit, sans-serif" font-size="38"
-                font-weight="800" fill="#0077B6" letter-spacing="2">EDECS</text>
+          <text x="0" y="38" font-family="Outfit, sans-serif" font-size="38" font-weight="800" fill="#0077B6"
+            letter-spacing="2">EDECS</text>
         </svg>
       </div>
       <div class="loading-screen__spinner" aria-hidden="true">
@@ -51,8 +87,8 @@
       <span id="error-banner-message" class="error-banner__message">
         Unable to load dashboard. Please contact your system administrator.
       </span>
-      <button id="error-dismiss-btn" class="error-banner__dismiss"
-              type="button" aria-label="Dismiss error notification">✕</button>
+      <button id="error-dismiss-btn" class="error-banner__dismiss" type="button"
+        aria-label="Dismiss error notification">✕</button>
     </div>
   </div>
 
@@ -65,38 +101,28 @@
     <?!= include('Components') ?>
 
     <!-- Page 1: HR Overview -->
-    <main id="page-overview"
-          class="page page--overview"
-          role="main"
-          aria-label="HR Overview"
-          data-page="overview">
+    <main id="page-overview" class="page page--overview" role="main" aria-label="HR Overview" data-page="overview">
       <?!= include('Overview') ?>
     </main>
 
     <!-- Page 2: Nationalization & Hiring -->
-    <main id="page-nationalization"
-          class="page page--nationalization"
-          role="main"
-          aria-label="Nationalization and Hiring Trends"
-          data-page="nationalization"
-          hidden>
+    <main id="page-nationalization" class="page page--nationalization" role="main"
+      aria-label="Nationalization and Hiring Trends" data-page="nationalization" hidden>
       <?!= include('Nationalization') ?>
     </main>
 
   </div><!-- /#app -->
 
-  <!-- ═══════════════════════════════════════════════════════════════════════
-       EXTERNAL LIBRARIES (loaded before app JS for availability)
-  ════════════════════════════════════════════════════════════════════════ -->
-  <!-- Leaflet.js — Real Interactive Map -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN/WLs=" crossorigin=""></script>
+  <!-- External Libraries: must load BEFORE app JavaScript -->
+  <!-- Leaflet.js — Interactive Map -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 
-  <!-- Chart.js — Multi-line Hiring Trend Chart -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <!-- Chart.js — Hiring Trend Chart -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 
-  <!-- Application JavaScript -->
+  <!-- Application JavaScript (inline — runs after CDN scripts above) -->
   <?!= include('JavaScript') ?>
 
 </body>
+
 </html>

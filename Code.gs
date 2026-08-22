@@ -180,3 +180,28 @@ function getFilterOptions() {
     return { success: false, error: e.message };
   }
 }
+
+/**
+ * Clears CacheService and forces a full reload from Google Sheets.
+ * Called from the client via the Refresh button in the navbar.
+ * DataService.refreshCache() is in global scope (all .gs files share scope).
+ *
+ * @returns {{ success: boolean, message: string }}
+ */
+function clientRefreshCache() {
+  try {
+    // refreshCache() is defined in DataService.gs and is globally accessible
+    const cache   = CacheService.getScriptCache();
+    cache.remove('EDECS_DASH_META');
+    // Remove all possible employee chunks
+    for (let i = 0; i < 20; i++) { cache.remove('EDECS_DASH_EMP_' + i); }
+    cache.remove('EDECS_DASHBOARD_DATA');
+    // Force a fresh load
+    loadAllData();
+    return { success: true, message: 'Cache refreshed.' };
+  } catch (e) {
+    AppLogger.error('Code', 'clientRefreshCache', e.message);
+    return { success: false, error: e.message };
+  }
+}
+
