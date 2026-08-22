@@ -52,16 +52,28 @@ const AppState = (() => {
 
 const GASClient = {
   /**
-   * Wraps a google.script.run call in a Promise.
+   * Wraps a google.script.run call in a Promise with a 30-second timeout.
    * @param {string}    fnName   Server function name
    * @param {...*}      args     Arguments to pass
    * @returns {Promise<*>}
    */
   call(fnName, ...args) {
     return new Promise((resolve, reject) => {
+      let isSettled = false;
+      
+      const timeoutTimer = setTimeout(() => {
+        if (!isSettled) {
+          isSettled = true;
+          reject(new Error(`Timeout: Server function "${fnName}" did not respond within 30 seconds. This usually means the script needs authorization.`));
+        }
+      }, 30000);
+
       try {
         let runner = google.script.run
           .withSuccessHandler(result => {
+            if (isSettled) return;
+            isSettled = true;
+            clearTimeout(timeoutTimer);
             if (result && result.success === false) {
               reject(new Error(result.error || 'Server returned failure'));
             } else {
@@ -69,12 +81,18 @@ const GASClient = {
             }
           })
           .withFailureHandler(err => {
+            if (isSettled) return;
+            isSettled = true;
+            clearTimeout(timeoutTimer);
             reject(new Error(err.message || 'Server error'));
           });
 
         // Dynamically call the server function by name with args
         runner[fnName](...args);
       } catch (e) {
+        if (isSettled) return;
+        isSettled = true;
+        clearTimeout(timeoutTimer);
         reject(new Error(`GASClient.call failed for "${fnName}": ${e.message}`));
       }
     });
