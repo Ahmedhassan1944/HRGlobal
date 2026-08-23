@@ -522,68 +522,520 @@ var NatCtrl = {
 };
 
 // =============================================================================
-// 9. MAP RENDERER — Leaflet.js
+// 9. MAP RENDERER — Local SVG Polygon Map (Power BI Azure Maps style)
+//    Zero external dependencies. Geometry from MAP_GEO_DATA (MapData.html).
+//    Handles Polygon + MultiPolygon. WCAG 2.1 AA keyboard/aria support.
 // =============================================================================
 
-var MapRenderer = {
-  map:     null,
-  markers: [],
+var MapRenderer = (function() {
 
-  init: function() {
-    if (typeof L === 'undefined') {
-      console.warn('Leaflet.js not loaded — map disabled');
-      return;
-    }
-    this.map = L.map('map', {
-      center:          [15, 38],
-      zoom:            4,
-      zoomControl:     true,
-      scrollWheelZoom: false
-    });
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-      subdomains: 'abcd',
-      maxZoom:    19
-    }).addTo(this.map);
-  },
+  // ── Country name → ISO-3 alias map ────────────────────────────────────────
+  var NAME_TO_ISO3 = {
+    'Egypt':                'EGY',
+    'KSA':                  'SAU',
+    'Saudi Arabia':         'SAU',
+    'UAE':                  'ARE',
+    'United Arab Emirates': 'ARE',
+    'Oman':                 'OMN',
+    'Tanzania':             'TZA',
+    'Angola':               'AGO'
+  };
 
-  updatePins: function(pins) {
-    if (!this.map || !pins) return;
-    for (var i = 0; i < this.markers.length; i++) {
-      this.markers[i].remove();
-    }
-    this.markers = [];
+  // ── Dashboard display labels for the six target countries ─────────────────
+  var ISO3_LABEL = {
+    EGY: 'Egypt',
+    SAU: 'KSA',
+    ARE: 'UAE',
+    OMN: 'Oman',
+    TZA: 'Tanzania',
+    AGO: 'Angola'
+  };
 
-    for (var j = 0; j < pins.length; j++) {
-      var pin = pins[j];
-      if (pin.lat === null || pin.lng === null || !pin.headCount) continue;
+  // ── Label anchor offsets (lon, lat) — tuned to avoid Arabian Peninsula overlap
+  var LABEL_OFFSETS = {
+    EGY: { dLon:  0,    dLat:  3   },
+    SAU: { dLon: -2,    dLat:  4   },
+    ARE: { dLon:  4,    dLat:  0   },
+    OMN: { dLon:  4,    dLat: -3   },
+    TZA: { dLon:  0,    dLat:  0   },
+    AGO: { dLon:  0,    dLat:  0   }
+  };
 
-      var radius = Math.max(12, Math.min(40, Math.sqrt(pin.headCount) * 0.8));
-      var marker = L.circleMarker([pin.lat, pin.lng], {
-        radius:      radius,
-        fillColor:   pin.color,
-        color:       '#D4A017',
-        weight:      2,
-        opacity:     0.9,
-        fillOpacity: 0.75
+  // ── Map visual constants ───────────────────────────────────────────────────
+  var FILL_ACTIVE     = '#b38126';   // Required fill for highlighted countries
+  var FILL_CONTEXT    = '#1c2028';   // Dark charcoal for surrounding countries
+  var STROKE_CONTEXT  = '#2e3542';   // Low-contrast border
+  var STROKE_ACTIVE   = '#c99a30';   // Slightly brighter bronze outline
+  var STROKE_HOVER    = '#d4a017';   // Gold hover/focus outline
+  var LABEL_BG        = '#0a7c8c';   // Dark teal label background
+  var LABEL_FG        = '#ffffff';   // White label text
+
+  // ── Viewport: geographic bounding box (must match pre-clipped data) ────────
+  var VIEW = { lonMin: -25, lonMax: 80, latMin: -40, latMax: 55 };
+
+  // ── Internal state ─────────────────────────────────────────────────────────
+  var _svg          = null;
+  var _tooltip      = null;
+  var _pathEls      = {};    // iso3 → <path> element
+  var _activeData   = {};    // iso3 → { headCount, pct }
+  var _totalActive  = 0;
+  var _viewW        = 0;
+  var _viewH        = 0;
+  var _zoom         = 1;
+  var _panX         = 0;
+  var _panY         = 0;
+  var _panning      = false;
+  var _panStart     = null;
+  var _panOrigin    = null;
+  var _mapGroup     = null;  // <g> that receives zoom/pan transform
+
+  // ── Public interface ───────────────────────────────────────────────────────
+  return {
+
+    /**
+     * Router compat: called by Router.navigate when switching to overview page.
+     * SVG is responsive via viewBox — no real resize needed.
+     */
+    map: { invalidateSize: function() {} },
+
+    // ── init ────────────────────────────────────────────────────────────────
+    init: function() {
+      var host = document.getElementById('map');
+      if (!host) { console.warn('[MapRenderer] #map element not found'); return; }
+
+      // Guard: ensure MAP_GEO_DATA was loaded by MapData.html
+      if (typeof MAP_GEO_DATA === 'undefined') {
+        console.error('[MapRenderer] MAP_GEO_DATA is not defined. MapData.html must be included before JavaScript.html.');
+        host.innerHTML = '<div class="map-empty-state" role="status">Map data unavailable — please contact your administrator.</div>';
+        return;
+      }
+
+      _viewW = host.clientWidth  || 800;
+      _viewH = host.clientHeight || 380;
+
+      // Create tooltip element
+      _tooltip = document.createElement('div');
+      _tooltip.className = 'map-tooltip';
+      _tooltip.setAttribute('role', 'tooltip');
+      _tooltip.setAttribute('aria-live', 'polite');
+      _tooltip.hidden = true;
+      host.style.position = 'relative';
+      host.appendChild(_tooltip);
+
+      // Build SVG
+      _svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      _svg.setAttribute('viewBox', '0 0 ' + _viewW + ' ' + _viewH);
+      _svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+      _svg.setAttribute('aria-label', 'Interactive map showing EDECS workforce distribution');
+      _svg.setAttribute('role', 'img');
+      _svg.style.cssText = 'display:block;width:100%;height:100%;';
+
+      // Panning group
+      _mapGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      _mapGroup.setAttribute('class', 'map-pan-group');
+      _svg.appendChild(_mapGroup);
+
+      // Render all country paths
+      var self = this;
+      var features = MAP_GEO_DATA.features || [];
+      for (var i = 0; i < features.length; i++) {
+        var feat  = features[i];
+        var props = feat.properties || {};
+        var iso3  = String(props.ISO_A3 || '').trim();
+        var isTarget = !!ISO3_LABEL[iso3];
+        var pathD = _buildPathData(feat.geometry);
+        if (!pathD) continue;
+
+        var pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        pathEl.setAttribute('d', pathD);
+        pathEl.setAttribute('fill',         isTarget ? FILL_ACTIVE   : FILL_CONTEXT);
+        pathEl.setAttribute('stroke',       isTarget ? STROKE_ACTIVE : STROKE_CONTEXT);
+        pathEl.setAttribute('stroke-width', isTarget ? '0.8'         : '0.4');
+        pathEl.setAttribute('class',        'map-country' + (isTarget ? ' map-country--target' : ''));
+        pathEl.setAttribute('data-iso3',    iso3);
+        pathEl.setAttribute('data-name',    String(props.NAME || ''));
+
+        if (isTarget) {
+          // Accessibility: interactive countries are keyboard-navigable
+          pathEl.setAttribute('role',       'button');
+          pathEl.setAttribute('tabindex',   '0');
+          pathEl.setAttribute('aria-label', (ISO3_LABEL[iso3] || iso3) + ': loading…');
+          (function(el, code, displayName) {
+            el.addEventListener('mouseenter', function(e) { self._onHover(e, el, code, displayName); });
+            el.addEventListener('mouseleave', function()  { self._onLeave(el, code); });
+            el.addEventListener('click',      function()  { self._onCountryClick(code, displayName); });
+            el.addEventListener('keydown',    function(e) {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                self._onCountryClick(code, displayName);
+              }
+            });
+            el.addEventListener('focus',      function()  { self._applyHoverStyle(el, true);  });
+            el.addEventListener('blur',       function()  { self._applyHoverStyle(el, false); });
+          })(pathEl, iso3, ISO3_LABEL[iso3] || iso3);
+        } else {
+          pathEl.setAttribute('aria-hidden', 'true');
+        }
+
+        _mapGroup.appendChild(pathEl);
+        if (isTarget) _pathEls[iso3] = pathEl;
+      }
+
+      // Render labels for target countries (above paths in z-order)
+      this._renderLabels();
+
+      // Zoom controls
+      this._buildZoomControls(host);
+
+      // Pan events
+      this._initPan();
+
+      host.insertBefore(_svg, host.firstChild);
+    },
+
+    // ── updatePins ──────────────────────────────────────────────────────────
+    /**
+     * Called by OverviewCtrl.render() and App.loadDashboardData().
+     * Receives mapPins[].{countryName, headCount} from DashboardService.
+     * Resolves country names via NAME_TO_ISO3 alias map.
+     */
+    updatePins: function(pins) {
+      if (!_svg || !pins) return;
+      _activeData  = {};
+      _totalActive = 0;
+
+      for (var i = 0; i < pins.length; i++) {
+        var pin  = pins[i];
+        var iso3 = NAME_TO_ISO3[pin.countryName];
+        if (!iso3) {
+          console.warn('[MapRenderer] Unknown country name: "' + pin.countryName + '" — skipped');
+          continue;
+        }
+        _activeData[iso3] = pin.headCount || 0;
+        _totalActive += pin.headCount || 0;
+      }
+
+      // Update country fill and aria-label
+      for (var code in _pathEls) {
+        if (!Object.prototype.hasOwnProperty.call(_pathEls, code)) continue;
+        var el      = _pathEls[code];
+        var count   = _activeData[code] || 0;
+        var label   = ISO3_LABEL[code] || code;
+        var pct     = (_totalActive > 0) ? ((count / _totalActive) * 100).toFixed(1) : '0.0';
+        var active  = count > 0;
+
+        el.setAttribute('fill',         active ? FILL_ACTIVE   : '#2a3040');
+        el.setAttribute('stroke',       active ? STROKE_ACTIVE : STROKE_CONTEXT);
+        el.setAttribute('stroke-width', active ? '0.8'         : '0.4');
+        el.setAttribute('aria-label',   label + ': ' + _formatNumber(count) + ' active employees (' + pct + '% of total)');
+      }
+
+      // Refresh labels with real headcounts
+      this._updateLabels();
+    },
+
+    // ── _renderLabels ────────────────────────────────────────────────────────
+    _renderLabels: function() {
+      var self = this;
+      for (var iso3 in ISO3_LABEL) {
+        if (!Object.prototype.hasOwnProperty.call(ISO3_LABEL, iso3)) continue;
+        this._createLabel(iso3);
+      }
+    },
+
+    _createLabel: function(iso3) {
+      var centroid = _getCentroid(iso3);
+      if (!centroid) return;
+
+      var offset  = LABEL_OFFSETS[iso3] || { dLon: 0, dLat: 0 };
+      var lon     = centroid.lon + (offset.dLon || 0);
+      var lat     = centroid.lat + (offset.dLat || 0);
+      var pt      = _project(lon, lat);
+      var label   = ISO3_LABEL[iso3] || iso3;
+
+      // Group for label badge
+      var g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.setAttribute('class',       'map-label');
+      g.setAttribute('data-iso3',   iso3);
+      g.setAttribute('aria-hidden', 'true');
+      g.setAttribute('transform',   'translate(' + pt.x + ',' + pt.y + ')');
+
+      // Background pill
+      var rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      rect.setAttribute('x',      '-22');
+      rect.setAttribute('y',      '-9');
+      rect.setAttribute('width',  '44');
+      rect.setAttribute('height', '18');
+      rect.setAttribute('rx',     '4');
+      rect.setAttribute('fill',   LABEL_BG);
+      rect.setAttribute('opacity','0.92');
+      g.appendChild(rect);
+
+      // Country name text
+      var txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      txt.setAttribute('x',            '0');
+      txt.setAttribute('y',            '4');
+      txt.setAttribute('text-anchor',  'middle');
+      txt.setAttribute('fill',         LABEL_FG);
+      txt.setAttribute('font-size',    '7');
+      txt.setAttribute('font-weight',  '700');
+      txt.setAttribute('font-family',  'Inter, system-ui, sans-serif');
+      txt.setAttribute('class',        'map-label__name');
+      txt.setAttribute('data-iso3',    iso3);
+      txt.textContent = label;
+      g.appendChild(txt);
+
+      // Headcount text (updated by _updateLabels)
+      var count = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      count.setAttribute('x',            '0');
+      count.setAttribute('y',            '16');
+      count.setAttribute('text-anchor',  'middle');
+      count.setAttribute('fill',         '#c8e8ec');
+      count.setAttribute('font-size',    '6');
+      count.setAttribute('font-weight',  '400');
+      count.setAttribute('font-family',  'Inter, system-ui, sans-serif');
+      count.setAttribute('class',        'map-label__count');
+      count.setAttribute('data-iso3',    iso3);
+      count.textContent = '—';
+      g.appendChild(count);
+
+      _mapGroup.appendChild(g);
+    },
+
+    _updateLabels: function() {
+      var countEls = _svg ? _svg.querySelectorAll('.map-label__count') : [];
+      for (var i = 0; i < countEls.length; i++) {
+        var el   = countEls[i];
+        var iso3 = el.getAttribute('data-iso3');
+        var cnt  = _activeData[iso3];
+        el.textContent = (cnt !== undefined && cnt !== null) ? _formatNumber(cnt) : '—';
+      }
+      // Resize label background to fit text
+      var nameEls = _svg ? _svg.querySelectorAll('.map-label__name') : [];
+      for (var j = 0; j < nameEls.length; j++) {
+        var nel  = nameEls[j];
+        var g    = nel.parentNode;
+        if (!g) continue;
+        var rect = g.querySelector('rect');
+        if (!rect) continue;
+        try {
+          var tw = nel.getComputedTextLength ? (nel.getComputedTextLength() + 10) : 44;
+          var hw = Math.max(44, tw);
+          rect.setAttribute('width',  String(hw));
+          rect.setAttribute('x',      String(-hw / 2));
+        } catch(e) { /* non-critical */ }
+      }
+    },
+
+    // ── Zoom controls ────────────────────────────────────────────────────────
+    _buildZoomControls: function(host) {
+      var self    = this;
+      var ctrl    = document.createElement('div');
+      ctrl.className = 'map-zoom-controls';
+      ctrl.setAttribute('aria-label', 'Map zoom controls');
+
+      var btnIn = document.createElement('button');
+      btnIn.type = 'button';
+      btnIn.textContent = '+';
+      btnIn.className = 'map-zoom-btn';
+      btnIn.setAttribute('aria-label', 'Zoom in');
+      btnIn.addEventListener('click', function() { self._applyZoom(0.25); });
+
+      var btnOut = document.createElement('button');
+      btnOut.type = 'button';
+      btnOut.textContent = '−';
+      btnOut.className = 'map-zoom-btn';
+      btnOut.setAttribute('aria-label', 'Zoom out');
+      btnOut.addEventListener('click', function() { self._applyZoom(-0.25); });
+
+      ctrl.appendChild(btnIn);
+      ctrl.appendChild(btnOut);
+      host.appendChild(ctrl);
+    },
+
+    _applyZoom: function(delta) {
+      _zoom = Math.max(0.6, Math.min(4, _zoom + delta));
+      _applyTransform();
+    },
+
+    // ── Pan events ───────────────────────────────────────────────────────────
+    _initPan: function() {
+      if (!_svg) return;
+      _svg.addEventListener('mousedown', function(e) {
+        if (e.button !== 0) return;
+        _panning  = true;
+        _panStart = { x: e.clientX, y: e.clientY };
+        _panOrigin = { x: _panX, y: _panY };
+        _svg.style.cursor = 'grabbing';
       });
-
-      var popupHtml = '<div style="font-family:sans-serif; min-width:140px;">' +
-        '<div style="font-size:1rem; font-weight:700; color:#D4A017; margin-bottom:4px;">' + _escHtml(pin.countryName) + '</div>' +
-        '<div style="font-size:1.5rem; font-weight:800; color:#17A2B8;">' + _formatNumber(pin.headCount) + '</div>' +
-        '<div style="font-size:0.75rem; color:#A8B2C1; margin-top:2px;">Active Employees</div>' +
-        '</div>';
-      marker.bindPopup(popupHtml, { maxWidth: 200 });
-      marker.bindTooltip(pin.countryName + ': ' + _formatNumber(pin.headCount), {
-        permanent:  false,
-        direction:  'top',
-        className:  'leaflet-tooltip-custom'
+      window.addEventListener('mousemove', function(e) {
+        if (!_panning) return;
+        _panX = _panOrigin.x + (e.clientX - _panStart.x);
+        _panY = _panOrigin.y + (e.clientY - _panStart.y);
+        _applyTransform();
       });
-      marker.addTo(this.map);
-      this.markers.push(marker);
+      window.addEventListener('mouseup', function() {
+        _panning = false;
+        if (_svg) _svg.style.cursor = '';
+      });
+      // Scroll wheel zoom
+      _svg.addEventListener('wheel', function(e) {
+        e.preventDefault();
+        var delta = e.deltaY > 0 ? -0.15 : 0.15;
+        _zoom = Math.max(0.6, Math.min(4, _zoom + delta));
+        _applyTransform();
+      }, { passive: false });
+    },
+
+    // ── Hover / focus ─────────────────────────────────────────────────────────
+    _applyHoverStyle: function(el, on) {
+      el.setAttribute('stroke',       on ? STROKE_HOVER : (_activeData[el.getAttribute('data-iso3')] ? STROKE_ACTIVE : STROKE_CONTEXT));
+      el.setAttribute('stroke-width', on ? '1.4'        : '0.8');
+      if (on) {
+        el.parentNode && el.parentNode.appendChild(el); // bring to front
+      }
+    },
+
+    _onHover: function(e, el, iso3, displayName) {
+      this._applyHoverStyle(el, true);
+      var count = _activeData[iso3] || 0;
+      var pct   = (_totalActive > 0) ? ((count / _totalActive) * 100).toFixed(1) + '%' : 'N/A';
+      var html  = '<strong>' + _escHtml(displayName) + '</strong>' +
+                  '<br><span class="map-tooltip__count">' + _formatNumber(count) + '</span>' +
+                  '<span class="map-tooltip__label"> active employees</span>' +
+                  '<br><span class="map-tooltip__pct">' + pct + ' of total</span>';
+      this._showTooltip(e, html);
+    },
+
+    _onLeave: function(el, iso3) {
+      this._applyHoverStyle(el, false);
+      this._hideTooltip();
+    },
+
+    _showTooltip: function(e, html) {
+      if (!_tooltip) return;
+      _tooltip.innerHTML = html;
+      _tooltip.hidden    = false;
+      var host = _tooltip.parentNode;
+      var hRect = host ? host.getBoundingClientRect() : { left: 0, top: 0 };
+      var tx = e.clientX - hRect.left + 12;
+      var ty = e.clientY - hRect.top  - 10;
+      // Keep tooltip within host bounds
+      tx = Math.min(tx, (host ? host.clientWidth  : 600) - 160);
+      ty = Math.max(ty, 4);
+      _tooltip.style.left = tx + 'px';
+      _tooltip.style.top  = ty + 'px';
+    },
+
+    _hideTooltip: function() {
+      if (_tooltip) _tooltip.hidden = true;
+    },
+
+    // ── Country click ─────────────────────────────────────────────────────────
+    _onCountryClick: function(iso3, displayName) {
+      // Communicate selection to existing filter system if a matching country
+      // exists in the dropdown, otherwise just log (non-breaking).
+      var filterEl = document.getElementById('filter-country');
+      if (filterEl) {
+        // Find matching option by display name or alias
+        var opts = filterEl.options;
+        for (var i = 0; i < opts.length; i++) {
+          if (opts[i].value === displayName ||
+              NAME_TO_ISO3[opts[i].value] === iso3) {
+            filterEl.value = opts[i].value;
+            AppState.setOverviewFilter('country', opts[i].value);
+            OverviewCtrl.applyFilters();
+            return;
+          }
+        }
+      }
+      // If no matching filter option, log for debugging — no crash
+      console.info('[MapRenderer] Country clicked: ' + displayName + ' (' + iso3 + ') — no filter match found');
+    }
+  }; // end return
+
+  // ── Private projection helpers (IIFE-scoped) ───────────────────────────────
+
+  function _project(lon, lat) {
+    var x = ((lon - VIEW.lonMin) / (VIEW.lonMax - VIEW.lonMin)) * _viewW;
+    var y = ((VIEW.latMax - lat) / (VIEW.latMax - VIEW.latMin)) * _viewH;
+    return { x: x, y: y };
+  }
+
+  function _ringToDCmd(ring) {
+    if (!ring || ring.length === 0) return '';
+    var d   = '';
+    var pt  = _project(ring[0][0], ring[0][1]);
+    d += 'M' + pt.x.toFixed(2) + ' ' + pt.y.toFixed(2);
+    for (var i = 1; i < ring.length; i++) {
+      pt = _project(ring[i][0], ring[i][1]);
+      d += 'L' + pt.x.toFixed(2) + ' ' + pt.y.toFixed(2);
+    }
+    d += 'Z';
+    return d;
+  }
+
+  function _buildPathData(geometry) {
+    if (!geometry) return '';
+    var d = '';
+    if (geometry.type === 'Polygon') {
+      var coords = geometry.coordinates || [];
+      for (var r = 0; r < coords.length; r++) {
+        d += _ringToDCmd(coords[r]);
+      }
+    } else if (geometry.type === 'MultiPolygon') {
+      var polys = geometry.coordinates || [];
+      for (var p = 0; p < polys.length; p++) {
+        var rings = polys[p] || [];
+        for (var rr = 0; rr < rings.length; rr++) {
+          d += _ringToDCmd(rings[rr]);
+        }
+      }
+    }
+    return d;
+  }
+
+  function _getCentroid(iso3) {
+    // Approximate centroid from bounding box of the feature's coordinates
+    var features = MAP_GEO_DATA.features || [];
+    for (var i = 0; i < features.length; i++) {
+      var f = features[i];
+      if ((f.properties || {}).ISO_A3 !== iso3) continue;
+      var geom = f.geometry || {};
+      var coords = geom.coordinates || [];
+      var lons = [], lats = [];
+      _extractCoords(coords, geom.type, lons, lats);
+      if (lons.length === 0) return null;
+      var lonSum = 0, latSum = 0;
+      for (var j = 0; j < lons.length; j++) { lonSum += lons[j]; latSum += lats[j]; }
+      return { lon: lonSum / lons.length, lat: latSum / lats.length };
+    }
+    return null;
+  }
+
+  function _extractCoords(coords, type, lons, lats) {
+    if (type === 'Polygon') {
+      var ring = coords[0] || [];
+      for (var i = 0; i < ring.length; i++) { lons.push(ring[i][0]); lats.push(ring[i][1]); }
+    } else if (type === 'MultiPolygon') {
+      for (var p = 0; p < coords.length; p++) {
+        var r = (coords[p] || [])[0] || [];
+        for (var k = 0; k < r.length; k++) { lons.push(r[k][0]); lats.push(r[k][1]); }
+      }
     }
   }
-};
+
+  function _applyTransform() {
+    if (!_mapGroup) return;
+    var cx = _viewW / 2, cy = _viewH / 2;
+    var tx = cx + (_panX) + (cx * (_zoom - 1) * -1);
+    var ty = cy + (_panY) + (cy * (_zoom - 1) * -1);
+    _mapGroup.setAttribute('transform',
+      'translate(' + (tx - cx * _zoom + cx).toFixed(2) + ',' + (ty - cy * _zoom + cy).toFixed(2) + ')' +
+      ' scale(' + _zoom.toFixed(3) + ')');
+  }
+
+})();
 
 // =============================================================================
 // 10. CHART RENDERER — Chart.js

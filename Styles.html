@@ -829,22 +829,111 @@ a { color: inherit; text-decoration: none; }
 #map {
   height: 380px;
   width: 100%;
-  background: #0d1b2a;
+  background: #0d1117;
+  position: relative;
+  overflow: hidden;
 }
 
-/* Leaflet popup overrides */
-.leaflet-popup-content-wrapper {
-  background: #1A2232 !important;
-  border: 1px solid var(--color-brand-gold) !important;
-  border-radius: var(--radius-md) !important;
-  box-shadow: var(--shadow-lg) !important;
-  color: var(--color-text-primary) !important;
+/* ── Local SVG Map — replaces Leaflet styles ———————————————————— */
+#map svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+}
+#map svg:active { cursor: grabbing; }
+
+.map-country {
+  vector-effect: non-scaling-stroke;
+  transition: stroke 0.15s, stroke-width 0.15s;
 }
 
-.leaflet-popup-content { color: var(--color-text-primary) !important; }
-.leaflet-popup-tip { background: #1A2232 !important; }
-.leaflet-popup-close-button { color: var(--color-text-muted) !important; }
-.leaflet-container { font-family: var(--font-body) !important; }
+.map-country--target {
+  cursor: pointer;
+}
+
+/* Keyboard focus ring for accessible country paths */
+.map-country--target:focus-visible,
+.map-country--target:focus {
+  outline: none;
+  stroke: var(--color-brand-gold) !important;
+  stroke-width: 2px !important;
+}
+
+.map-label { pointer-events: none; }
+
+/* Tooltip */
+.map-tooltip {
+  position: absolute;
+  background: #1a2232;
+  border: 1px solid var(--color-brand-gold);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  color: var(--color-text-primary);
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  pointer-events: none;
+  z-index: 10;
+  min-width: 120px;
+  box-shadow: var(--shadow-md);
+  max-width: 200px;
+  line-height: 1.5;
+}
+.map-tooltip__count {
+  font-size: var(--text-md);
+  font-weight: 700;
+  color: var(--color-text-kpi);
+}
+.map-tooltip__label { color: var(--color-text-secondary); }
+.map-tooltip__pct   { color: var(--color-text-muted); font-size: var(--text-xs); }
+
+/* Zoom controls */
+.map-zoom-controls {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 5;
+}
+.map-zoom-btn {
+  width: 28px;
+  height: 28px;
+  background: rgba(26,34,50,0.9);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-gold);
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition-base), border-color var(--transition-base);
+}
+.map-zoom-btn:hover {
+  background: rgba(212,160,23,0.15);
+  border-color: var(--color-brand-gold);
+}
+.map-zoom-btn:focus-visible {
+  outline: 2px solid var(--color-brand-gold);
+  outline-offset: 1px;
+}
+
+/* Empty state if MAP_GEO_DATA fails to load */
+.map-empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 200px;
+  color: var(--color-text-muted);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  padding: var(--space-lg);
+  text-align: center;
+}
 
 /* ── 16. NATIONALIZATION CARDS ──────────────────────────────────────────── */
 .nat-grid {

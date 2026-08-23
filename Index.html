@@ -16,8 +16,7 @@
     href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800&display=swap"
     rel="stylesheet">
 
-  <!-- Leaflet.js CSS (Interactive Map) -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+
 
   <?!= include('Styles') ?>
 
@@ -113,12 +112,12 @@
 
   </div><!-- /#app -->
 
-  <!-- External Libraries: must load BEFORE app JavaScript -->
-  <!-- Leaflet.js — Interactive Map -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 
   <!-- Chart.js — Hiring Trend Chart -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+
+  <!-- Local Map Geometry (MAP_GEO_DATA) — must load before JavaScript.html -->
+  <?!= include('MapData') ?>
 
   <!-- Application JavaScript (inline — runs after CDN scripts above) -->
   <?!= include('JavaScript') ?>
