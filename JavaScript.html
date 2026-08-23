@@ -809,29 +809,33 @@ var MapRenderer = (function() {
       g.setAttribute('transform',   'translate(' + pt.x + ',' + pt.y + ')');
 
       // Background pill — width adapts to label length.
-      // "Saudi Arabia" needs ~100 SVG units; shorter names use a 56-unit minimum.
+      // Font is 13 SVG units. Pill must contain name row + count row.
+      // Rough char width at font-size 13: ~7.5 SVG units per char.
       var labelCharCount = label.length;
-      var pillW = labelCharCount > 10 ? Math.max(100, labelCharCount * 7) : 56;
+      var pillW = Math.max(labelCharCount > 10 ? Math.max(110, labelCharCount * 8) : 62, 62);
       var pillHalfW = pillW / 2;
+      var pillH = 30;   // taller pill for 13-unit name + 9-unit count
+      var pillY = -16;  // center the pill vertically on the anchor point
 
       // Background pill
       var rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
       rect.setAttribute('x',      String(-pillHalfW));
-      rect.setAttribute('y',      '-9');
+      rect.setAttribute('y',      String(pillY));
       rect.setAttribute('width',  String(pillW));
-      rect.setAttribute('height', '18');
-      rect.setAttribute('rx',     '4');
+      rect.setAttribute('height', String(pillH));
+      rect.setAttribute('rx',     '5');
       rect.setAttribute('fill',   LABEL_BG);
       rect.setAttribute('opacity','0.92');
       g.appendChild(rect);
 
-      // Country name text
+      // Country name text — 13 SVG units (≈12–13 px at full-width panel)
       var txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
       txt.setAttribute('x',            '0');
-      txt.setAttribute('y',            '4');
+      txt.setAttribute('y',            '-2');   // upper line in pill
       txt.setAttribute('text-anchor',  'middle');
+      txt.setAttribute('dominant-baseline', 'central');
       txt.setAttribute('fill',         LABEL_FG);
-      txt.setAttribute('font-size',    '7');
+      txt.setAttribute('font-size',    '13');
       txt.setAttribute('font-weight',  '700');
       txt.setAttribute('font-family',  'Inter, system-ui, sans-serif');
       txt.setAttribute('class',        'map-label__name');
@@ -839,13 +843,14 @@ var MapRenderer = (function() {
       txt.textContent = label;
       g.appendChild(txt);
 
-      // Headcount text (updated by _updateLabels)
+      // Headcount text — 9 SVG units, subordinate but readable
       var count = document.createElementNS('http://www.w3.org/2000/svg', 'text');
       count.setAttribute('x',            '0');
-      count.setAttribute('y',            '16');
+      count.setAttribute('y',            '11');  // lower line in pill
       count.setAttribute('text-anchor',  'middle');
+      count.setAttribute('dominant-baseline', 'central');
       count.setAttribute('fill',         '#c8e8ec');
-      count.setAttribute('font-size',    '6');
+      count.setAttribute('font-size',    '9');
       count.setAttribute('font-weight',  '400');
       count.setAttribute('font-family',  'Inter, system-ui, sans-serif');
       count.setAttribute('class',        'map-label__count');
@@ -864,20 +869,22 @@ var MapRenderer = (function() {
         var cnt  = _activeData[iso3];
         el.textContent = (cnt !== undefined && cnt !== null) ? _formatNumber(cnt) : '—';
       }
-      // Resize label background to fit text
+      // Attempt to resize pill width from rendered text (non-critical; init-time pill is already safe)
       var nameEls = _svg ? _svg.querySelectorAll('.map-label__name') : [];
       for (var j = 0; j < nameEls.length; j++) {
         var nel  = nameEls[j];
-        var g    = nel.parentNode;
-        if (!g) continue;
-        var rect = g.querySelector('rect');
-        if (!rect) continue;
+        var gr   = nel.parentNode;
+        if (!gr) continue;
+        var rct  = gr.querySelector('rect');
+        if (!rct) continue;
         try {
-          var tw = nel.getComputedTextLength ? (nel.getComputedTextLength() + 10) : 44;
-          var hw = Math.max(44, tw);
-          rect.setAttribute('width',  String(hw));
-          rect.setAttribute('x',      String(-hw / 2));
-        } catch(e) { /* non-critical */ }
+          if (nel.getComputedTextLength) {
+            var tw  = nel.getComputedTextLength() + 16; // 8px horizontal padding each side
+            var hw  = Math.max(parseFloat(rct.getAttribute('width')) || 62, tw);
+            rct.setAttribute('width', String(hw));
+            rct.setAttribute('x',     String(-hw / 2));
+          }
+        } catch(e) { /* non-critical: keep initial dimensions on error */ }
       }
     },
 
