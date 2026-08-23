@@ -713,12 +713,8 @@ var MapRenderer = (function() {
 
       // Render labels for target countries (above paths in z-order)
       this._renderLabels();
-
-      // Zoom controls
-      this._buildZoomControls(host);
-
-      // Pan events
-      this._initPan();
+      
+      // Zoom and Pan are permanently disabled for a fixed Power BI-style visualization.
 
       host.insertBefore(_svg, host.firstChild);
     },
@@ -745,6 +741,9 @@ var MapRenderer = (function() {
         _totalActive += pin.headCount || 0;
       }
 
+      var activeCountryFilter = AppState.get('overviewFilter').country;
+      var activeFilterIso3 = activeCountryFilter === 'All' ? null : (NAME_TO_ISO3[activeCountryFilter] || activeCountryFilter);
+
       // Update country fill and aria-label
       for (var code in _pathEls) {
         if (!Object.prototype.hasOwnProperty.call(_pathEls, code)) continue;
@@ -753,10 +752,40 @@ var MapRenderer = (function() {
         var label   = ISO3_LABEL[code] || code;
         var pct     = (_totalActive > 0) ? ((count / _totalActive) * 100).toFixed(1) : '0.0';
         var active  = count > 0;
+        var isSelected = activeFilterIso3 && activeFilterIso3 === code;
 
-        el.setAttribute('fill',         active ? FILL_ACTIVE   : FILL_CONTEXT);
-        el.setAttribute('stroke',       active ? STROKE_ACTIVE : STROKE_CONTEXT);
-        el.setAttribute('stroke-width', active ? '0.8'         : '0.4');
+        var fill = FILL_CONTEXT;
+        var stroke = STROKE_CONTEXT;
+        var strokeWidth = '0.4';
+        var className = 'map-country map-country--target';
+
+        if (activeCountryFilter !== 'All') {
+          if (isSelected && active) {
+            className += ' map-country--selected';
+            fill = FILL_ACTIVE;
+            stroke = STROKE_ACTIVE;
+            strokeWidth = '1.4';
+          } else if (active) {
+            className += ' map-country--dimmed';
+            fill = FILL_CONTEXT; // Visually de-emphasized
+          } else {
+            className += ' map-country--context';
+          }
+        } else {
+          if (active) {
+            className += ' map-country--active';
+            fill = FILL_ACTIVE;
+            stroke = STROKE_ACTIVE;
+            strokeWidth = '0.8';
+          } else {
+            className += ' map-country--context';
+          }
+        }
+
+        el.setAttribute('class', className);
+        el.setAttribute('fill', fill);
+        el.setAttribute('stroke', stroke);
+        el.setAttribute('stroke-width', strokeWidth);
         el.setAttribute('aria-label',   label + ': ' + _formatNumber(count) + ' active employees (' + pct + '% of total)');
       }
 
@@ -764,11 +793,18 @@ var MapRenderer = (function() {
       var saudiPath = _pathEls['SAU'];
       if (saudiPath) {
         var isSaudiActive = Number(_activeData['SAU'] || 0) > 0;
-        var requiredFill = isSaudiActive ? FILL_ACTIVE : FILL_CONTEXT;
+        var isSaudiSelected = activeFilterIso3 && activeFilterIso3 === 'SAU';
+        var requiredFill = FILL_CONTEXT;
+        if (activeCountryFilter !== 'All') {
+           if (isSaudiSelected && isSaudiActive) requiredFill = FILL_ACTIVE;
+        } else {
+           if (isSaudiActive) requiredFill = FILL_ACTIVE;
+        }
+        
         saudiPath.setAttribute('fill', requiredFill);
         saudiPath.style.fill = requiredFill;
 
-        if (isSaudiActive) {
+        if (requiredFill === FILL_ACTIVE) {
           // Force a reflow if necessary to catch the computed style immediately (in browser context)
           var computedFill = typeof window !== 'undefined' && window.getComputedStyle ? window.getComputedStyle(saudiPath).fill : null;
           // In some browsers computed fill is rgb(...), but we just warn if it's explicitly wrong or fallback
@@ -888,75 +924,31 @@ var MapRenderer = (function() {
       }
     },
 
-    // ── Zoom controls ────────────────────────────────────────────────────────
-    _buildZoomControls: function(host) {
-      var self    = this;
-      var ctrl    = document.createElement('div');
-      ctrl.className = 'map-zoom-controls';
-      ctrl.setAttribute('aria-label', 'Map zoom controls');
-
-      var btnIn = document.createElement('button');
-      btnIn.type = 'button';
-      btnIn.textContent = '+';
-      btnIn.className = 'map-zoom-btn';
-      btnIn.setAttribute('aria-label', 'Zoom in');
-      btnIn.addEventListener('click', function() { self._applyZoom(0.25); });
-
-      var btnOut = document.createElement('button');
-      btnOut.type = 'button';
-      btnOut.textContent = '−';
-      btnOut.className = 'map-zoom-btn';
-      btnOut.setAttribute('aria-label', 'Zoom out');
-      btnOut.addEventListener('click', function() { self._applyZoom(-0.25); });
-
-      ctrl.appendChild(btnIn);
-      ctrl.appendChild(btnOut);
-      host.appendChild(ctrl);
-    },
-
-    _applyZoom: function(delta) {
-      _zoom = Math.max(0.6, Math.min(4, _zoom + delta));
-      _applyTransform();
-    },
-
-    // ── Pan events ───────────────────────────────────────────────────────────
-    _initPan: function() {
-      if (!_svg) return;
-      _svg.addEventListener('mousedown', function(e) {
-        if (e.button !== 0) return;
-        _panning  = true;
-        _panStart = { x: e.clientX, y: e.clientY };
-        _panOrigin = { x: _panX, y: _panY };
-        _svg.style.cursor = 'grabbing';
-      });
-      window.addEventListener('mousemove', function(e) {
-        if (!_panning) return;
-        // Scale mouse pixels to SVG viewBox coordinates so panning isn't "too fast" or "too slow"
-        var scaleX = _viewW / (_svg.clientWidth || _viewW);
-        var scaleY = _viewH / (_svg.clientHeight || _viewH);
-        var scale = Math.max(scaleX, scaleY); // approximate uniform scale
-        
-        _panX = _panOrigin.x + (e.clientX - _panStart.x) * scale;
-        _panY = _panOrigin.y + (e.clientY - _panStart.y) * scale;
-        _applyTransform();
-      });
-      window.addEventListener('mouseup', function() {
-        _panning = false;
-        if (_svg) _svg.style.cursor = '';
-      });
-      // Scroll wheel zoom
-      _svg.addEventListener('wheel', function(e) {
-        e.preventDefault();
-        var delta = e.deltaY > 0 ? -0.15 : 0.15;
-        _zoom = Math.max(0.6, Math.min(4, _zoom + delta));
-        _applyTransform();
-      }, { passive: false });
-    },
-
-    // ── Hover / focus ─────────────────────────────────────────────────────────
+    // Hover / focus ─────────────────────────────────────────────────────────
     _applyHoverStyle: function(el, on) {
-      el.setAttribute('stroke',       on ? STROKE_HOVER : (_activeData[el.getAttribute('data-iso3')] > 0 ? STROKE_ACTIVE : STROKE_CONTEXT));
-      el.setAttribute('stroke-width', on ? '1.4'        : '0.8');
+      var code = el.getAttribute('data-iso3');
+      var activeCountryFilter = AppState.get('overviewFilter').country;
+      var activeFilterIso3 = activeCountryFilter === 'All' ? null : (NAME_TO_ISO3[activeCountryFilter] || activeCountryFilter);
+      var isSelected = activeFilterIso3 && activeFilterIso3 === code;
+      var isActive = _activeData[code] > 0;
+      
+      var defaultStroke = STROKE_CONTEXT;
+      var defaultWidth = '0.4';
+      
+      if (activeCountryFilter !== 'All') {
+        if (isSelected && isActive) {
+          defaultStroke = STROKE_ACTIVE;
+          defaultWidth = '1.4';
+        }
+      } else {
+        if (isActive) {
+          defaultStroke = STROKE_ACTIVE;
+          defaultWidth = '0.8';
+        }
+      }
+
+      el.setAttribute('stroke',       on ? STROKE_HOVER : defaultStroke);
+      el.setAttribute('stroke-width', on ? '1.4'        : defaultWidth);
       if (on && _pathLayer) {
         // Explicitly re-append within the path layer only — never touches _labelLayer
         _pathLayer.appendChild(el);
@@ -1095,15 +1087,7 @@ var MapRenderer = (function() {
     }
   }
 
-  function _applyTransform() {
-    if (!_mapGroup) return;
-    var cx = _viewW / 2, cy = _viewH / 2;
-    var tx = cx + (_panX) + (cx * (_zoom - 1) * -1);
-    var ty = cy + (_panY) + (cy * (_zoom - 1) * -1);
-    _mapGroup.setAttribute('transform',
-      'translate(' + (tx - cx * _zoom + cx).toFixed(2) + ',' + (ty - cy * _zoom + cy).toFixed(2) + ')' +
-      ' scale(' + _zoom.toFixed(3) + ')');
-  }
+  // No transform logic needed as zoom and pan are disabled
 
 })();
 

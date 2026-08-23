@@ -897,7 +897,24 @@ a { color: inherit; text-decoration: none; }
 
 .map-country {
   vector-effect: non-scaling-stroke;
-  transition: stroke 0.15s, stroke-width 0.15s;
+  transition: stroke 0.15s, stroke-width 0.15s, fill 0.15s;
+}
+
+/* Explicit Country States */
+.map-country--active {
+  /* Inherits active data fill */
+}
+.map-country--selected {
+  stroke: var(--color-brand-gold) !important;
+  stroke-width: 1.4px !important;
+}
+.map-country--dimmed {
+  fill: #1c2028 !important; /* FILL_CONTEXT */
+  stroke: rgba(255,255,255,0.1) !important; /* STROKE_CONTEXT */
+  stroke-width: 0.4px !important;
+}
+.map-country--context {
+  fill: #1c2028 !important;
 }
 
 .map-country--target {
@@ -939,39 +956,7 @@ a { color: inherit; text-decoration: none; }
 .map-tooltip__label { color: var(--color-text-secondary); }
 .map-tooltip__pct   { color: var(--color-text-muted); font-size: var(--text-xs); }
 
-/* Zoom controls */
-.map-zoom-controls {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  z-index: 5;
-}
-.map-zoom-btn {
-  width: 28px;
-  height: 28px;
-  background: rgba(26,34,50,0.9);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  color: var(--color-text-gold);
-  font-size: 1rem;
-  font-weight: 700;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background var(--transition-base), border-color var(--transition-base);
-}
-.map-zoom-btn:hover {
-  background: rgba(212,160,23,0.15);
-  border-color: var(--color-brand-gold);
-}
-.map-zoom-btn:focus-visible {
-  outline: 2px solid var(--color-brand-gold);
-  outline-offset: 1px;
-}
+/* Zoom controls removed per requirement */
 
 /* Empty state if MAP_GEO_DATA fails to load */
 .map-empty-state {
