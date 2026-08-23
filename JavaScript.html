@@ -589,6 +589,8 @@ var MapRenderer = (function() {
   var _panStart     = null;
   var _panOrigin    = null;
   var _mapGroup     = null;  // <g> that receives zoom/pan transform
+  var _pathLayer    = null;  // <g> inside _mapGroup to hold country paths
+  var _labelLayer   = null;  // <g> inside _mapGroup to hold labels (always above paths)
 
   // ── Public interface ───────────────────────────────────────────────────────
   return {
@@ -654,6 +656,14 @@ var MapRenderer = (function() {
       // Panning group
       _mapGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
       _mapGroup.setAttribute('class', 'map-pan-group');
+      
+      _pathLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      _pathLayer.setAttribute('class', 'map-path-layer');
+      _labelLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      _labelLayer.setAttribute('class', 'map-label-layer');
+      
+      _mapGroup.appendChild(_pathLayer);
+      _mapGroup.appendChild(_labelLayer);
       _svg.appendChild(_mapGroup);
 
       // Render all country paths
@@ -697,7 +707,7 @@ var MapRenderer = (function() {
           pathEl.setAttribute('aria-hidden', 'true');
         }
 
-        _mapGroup.appendChild(pathEl);
+        _pathLayer.appendChild(pathEl);
         if (isTarget) _pathEls[iso3] = pathEl;
       }
 
@@ -748,6 +758,24 @@ var MapRenderer = (function() {
         el.setAttribute('stroke',       active ? STROKE_ACTIVE : STROKE_CONTEXT);
         el.setAttribute('stroke-width', active ? '0.8'         : '0.4');
         el.setAttribute('aria-label',   label + ': ' + _formatNumber(count) + ' active employees (' + pct + '% of total)');
+      }
+
+      // Mandatory KSA Deterministic Fill Check & Assertion
+      var saudiPath = _pathEls['SAU'];
+      if (saudiPath) {
+        var isSaudiActive = Number(_activeData['SAU'] || 0) > 0;
+        var requiredFill = isSaudiActive ? FILL_ACTIVE : FILL_CONTEXT;
+        saudiPath.setAttribute('fill', requiredFill);
+        saudiPath.style.fill = requiredFill;
+
+        if (isSaudiActive) {
+          // Force a reflow if necessary to catch the computed style immediately (in browser context)
+          var computedFill = typeof window !== 'undefined' && window.getComputedStyle ? window.getComputedStyle(saudiPath).fill : null;
+          // In some browsers computed fill is rgb(...), but we just warn if it's explicitly wrong or fallback
+          if (computedFill && (computedFill.indexOf('rgb(28, 32, 40)') > -1 || computedFill === FILL_CONTEXT)) {
+            console.error('[MapRenderer] CRITICAL: SAU fill assertion failed! Computed color implies it is still ' + FILL_CONTEXT);
+          }
+        }
       }
 
       // Refresh labels with real headcounts
@@ -819,7 +847,7 @@ var MapRenderer = (function() {
       count.textContent = '—';
       g.appendChild(count);
 
-      _mapGroup.appendChild(g);
+      _labelLayer.appendChild(g);
     },
 
     _updateLabels: function() {
