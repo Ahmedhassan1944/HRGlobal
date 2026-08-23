@@ -648,6 +648,20 @@ a { color: inherit; text-decoration: none; }
   color: var(--color-text-gold);
 }
 
+/* ── 10.5 MAIN LAYOUT SPLIT (Tables + Map) ──────────────────────────────── */
+.overview-content-split {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: var(--space-xl);
+  align-items: stretch;
+}
+
+@media (max-width: 1300px) {
+  .overview-content-split {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ── 11. DATA GRID (3-column table layout) ─────────────────────────────── */
 .data-grid {
   display: grid;

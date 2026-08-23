@@ -553,11 +553,11 @@ var MapRenderer = (function() {
 
   // ── Label anchor offsets (lon, lat) — tuned to avoid Arabian Peninsula overlap
   var LABEL_OFFSETS = {
-    EGY: { dLon:  0,    dLat:  3   },
-    SAU: { dLon: -2,    dLat:  4   },
-    ARE: { dLon:  4,    dLat:  0   },
-    OMN: { dLon:  4,    dLat: -3   },
-    TZA: { dLon:  0,    dLat:  0   },
+    EGY: { dLon:  0,    dLat:  0   },
+    SAU: { dLon:  0,    dLat:  2   },
+    ARE: { dLon:  5,    dLat:  4   }, // Push UAE up and right
+    OMN: { dLon:  6,    dLat: -3   }, // Push Oman down and right
+    TZA: { dLon:  2,    dLat:  0   },
     AGO: { dLon:  0,    dLat:  0   }
   };
 
@@ -570,8 +570,9 @@ var MapRenderer = (function() {
   var LABEL_BG        = '#0a7c8c';   // Dark teal label background
   var LABEL_FG        = '#ffffff';   // White label text
 
-  // ── Viewport: geographic bounding box (must match pre-clipped data) ────────
-  var VIEW = { lonMin: -25, lonMax: 80, latMin: -40, latMax: 55 };
+  // ── Viewport: geographic bounding box (Middle East + Africa focus) ─────────
+  // A strict bounding box that perfectly maps to a 700x700 viewBox without stretching.
+  var VIEW = { lonMin: -5, lonMax: 65, latMin: -25, latMax: 45 };
 
   // ── Internal state ─────────────────────────────────────────────────────────
   var _svg          = null;
@@ -610,8 +611,11 @@ var MapRenderer = (function() {
         return;
       }
 
-      _viewW = host.clientWidth  || 800;
-      _viewH = host.clientHeight || 380;
+      // Use a fixed 700x700 viewBox to preserve perfect geographic aspect ratio.
+      // The CSS (#map { height: 100%; min-height: 450px }) and SVG preserveAspectRatio
+      // will handle the responsive sizing without distorting the polygons.
+      _viewW = 700;
+      _viewH = 700;
 
       // Create tooltip element
       _tooltip = document.createElement('div');
@@ -619,7 +623,6 @@ var MapRenderer = (function() {
       _tooltip.setAttribute('role', 'tooltip');
       _tooltip.setAttribute('aria-live', 'polite');
       _tooltip.hidden = true;
-      host.style.position = 'relative';
       host.appendChild(_tooltip);
 
       // Build SVG
@@ -870,8 +873,13 @@ var MapRenderer = (function() {
       });
       window.addEventListener('mousemove', function(e) {
         if (!_panning) return;
-        _panX = _panOrigin.x + (e.clientX - _panStart.x);
-        _panY = _panOrigin.y + (e.clientY - _panStart.y);
+        // Scale mouse pixels to SVG viewBox coordinates so panning isn't "too fast" or "too slow"
+        var scaleX = _viewW / (_svg.clientWidth || _viewW);
+        var scaleY = _viewH / (_svg.clientHeight || _viewH);
+        var scale = Math.max(scaleX, scaleY); // approximate uniform scale
+        
+        _panX = _panOrigin.x + (e.clientX - _panStart.x) * scale;
+        _panY = _panOrigin.y + (e.clientY - _panStart.y) * scale;
         _applyTransform();
       });
       window.addEventListener('mouseup', function() {
