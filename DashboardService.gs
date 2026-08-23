@@ -89,16 +89,45 @@ function buildOverviewPayload(data, filters) {
     mapAcc[c.name] = (mapAcc[c.name] || 0) + 1;
   });
 
+  /**
+   * Centralized alias map: translates country display names (as they appear in
+   * DimCountry) to the key used in CONFIG.MAP_COORDINATES and CONFIG.CHART_COLORS.
+   * Add entries here whenever the sheet uses a name that differs from the config key.
+   */
+  const MAP_COUNTRY_ALIASES = {
+    'KSA':          'KSA',
+    'Saudi Arabia': 'KSA',
+    'SAU':          'KSA',
+    'UAE':          'UAE',
+    'United Arab Emirates': 'UAE',
+    'Egypt':        'Egypt',
+    'Oman':         'Oman',
+    'Tanzania':     'Tanzania',
+    'Angola':       'Angola'
+  };
+
   const mapPins = Object.values(countries)
     .map(c => {
-      const coords = CONFIG.MAP_COORDINATES[c.name];
-      if (!coords) return null;
+      const coordKey = MAP_COUNTRY_ALIASES[c.name] || c.name;
+      const coords = CONFIG.MAP_COORDINATES[coordKey];
+      if (!coords) {
+        // Development assertion: warn if a configured country loses its pin
+        if (mapAcc[c.name] > 0) {
+          console.warn(
+            '[DashboardService] Map pin dropped — country: "' + c.name +
+            '", coordKey: "' + coordKey + '". ' +
+            'Headcount: ' + mapAcc[c.name] + '. ' +
+            'Add "' + c.name + '" to MAP_COUNTRY_ALIASES or CONFIG.MAP_COORDINATES.'
+          );
+        }
+        return null;
+      }
       return {
         countryName: c.name,
         headCount:   mapAcc[c.name] || 0,
         lat:         coords.lat,
         lng:         coords.lng,
-        color:       CONFIG.CHART_COLORS[c.name] || '#888888'
+        color:       CONFIG.CHART_COLORS[coordKey] || '#888888'
       };
     })
     .filter(Boolean);

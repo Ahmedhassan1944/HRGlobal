@@ -808,11 +808,17 @@ var MapRenderer = (function() {
       g.setAttribute('aria-hidden', 'true');
       g.setAttribute('transform',   'translate(' + pt.x + ',' + pt.y + ')');
 
-      // Background pill (widened to accommodate "Saudi Arabia")
+      // Background pill — width adapts to label length.
+      // "Saudi Arabia" needs ~100 SVG units; shorter names use a 56-unit minimum.
+      var labelCharCount = label.length;
+      var pillW = labelCharCount > 10 ? Math.max(100, labelCharCount * 7) : 56;
+      var pillHalfW = pillW / 2;
+
+      // Background pill
       var rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-      rect.setAttribute('x',      '-28');
+      rect.setAttribute('x',      String(-pillHalfW));
       rect.setAttribute('y',      '-9');
-      rect.setAttribute('width',  '56');
+      rect.setAttribute('width',  String(pillW));
       rect.setAttribute('height', '18');
       rect.setAttribute('rx',     '4');
       rect.setAttribute('fill',   LABEL_BG);
@@ -942,10 +948,11 @@ var MapRenderer = (function() {
 
     // ── Hover / focus ─────────────────────────────────────────────────────────
     _applyHoverStyle: function(el, on) {
-      el.setAttribute('stroke',       on ? STROKE_HOVER : (_activeData[el.getAttribute('data-iso3')] ? STROKE_ACTIVE : STROKE_CONTEXT));
+      el.setAttribute('stroke',       on ? STROKE_HOVER : (_activeData[el.getAttribute('data-iso3')] > 0 ? STROKE_ACTIVE : STROKE_CONTEXT));
       el.setAttribute('stroke-width', on ? '1.4'        : '0.8');
-      if (on) {
-        el.parentNode && el.parentNode.appendChild(el); // bring to front
+      if (on && _pathLayer) {
+        // Explicitly re-append within the path layer only — never touches _labelLayer
+        _pathLayer.appendChild(el);
       }
     },
 
@@ -986,17 +993,20 @@ var MapRenderer = (function() {
 
     // ── Country click ─────────────────────────────────────────────────────────
     _onCountryClick: function(iso3, displayName) {
-      // Communicate selection to existing filter system if a matching country
-      // exists in the dropdown, otherwise just log (non-breaking).
+      // Communicate selection to existing filter system.
+      // The dashboard filter dropdown stores names using CONFIG.COUNTRIES values
+      // (e.g. 'KSA' for Saudi Arabia). Try matching by option value = displayName
+      // first, then by option value resolving to the same ISO3 code.
       var filterEl = document.getElementById('filter-country');
       if (filterEl) {
-        // Find matching option by display name or alias
         var opts = filterEl.options;
         for (var i = 0; i < opts.length; i++) {
-          if (opts[i].value === displayName ||
-              NAME_TO_ISO3[opts[i].value] === iso3) {
-            filterEl.value = opts[i].value;
-            AppState.setOverviewFilter('country', opts[i].value);
+          var optVal = opts[i].value;
+          if (optVal === displayName ||
+              NAME_TO_ISO3[optVal] === iso3 ||
+              optVal === iso3) {
+            filterEl.value = optVal;
+            AppState.setOverviewFilter('country', optVal);
             OverviewCtrl.applyFilters();
             return;
           }
