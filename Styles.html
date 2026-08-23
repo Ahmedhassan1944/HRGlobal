@@ -648,17 +648,54 @@ a { color: inherit; text-decoration: none; }
   color: var(--color-text-gold);
 }
 
-/* ── 10.5 MAIN LAYOUT SPLIT (Tables + Map) ──────────────────────────────── */
-.overview-content-split {
+/* ── 10.5 MAIN CONTENT STACK (Tables row + Map row) ───────────────── */
+/* Replaces the old 2fr/1fr side-by-side split. Now a vertical stack. */
+.overview-content-stack {
   display: grid;
-  grid-template-columns: 2fr 1fr;
-  gap: var(--space-xl);
-  align-items: stretch;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--space-xl);
+  width: 100%;
+  min-width: 0;
 }
 
-@media (max-width: 1300px) {
-  .overview-content-split {
-    grid-template-columns: 1fr;
+.overview-tables-section,
+.overview-map-section {
+  width: 100%;
+  min-width: 0;
+}
+
+/* Three equal table columns on desktop */
+.overview-tables-section .data-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-lg);
+  width: 100%;
+  min-width: 0;
+}
+
+/* Map card spans full second-row width */
+.overview-map-section .map-card {
+  width: 100%;
+  min-width: 0;
+}
+
+/* Keep .overview-content-split alias neutral — no longer used for layout */
+.overview-content-split {
+  display: block;
+  width: 100%;
+}
+
+@media (max-width: 1100px) {
+  /* Two columns on medium-large screens */
+  .overview-tables-section .data-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  /* Single column on small screens */
+  .overview-tables-section .data-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -841,8 +878,9 @@ a { color: inherit; text-decoration: none; }
 }
 
 #map {
-  height: 380px;
   width: 100%;
+  min-height: 520px;
+  height: clamp(520px, 60vw, 700px);
   background: #0d1117;
   position: relative;
   overflow: hidden;
@@ -1260,7 +1298,7 @@ a { color: inherit; text-decoration: none; }
 
   .nat-grid { grid-template-columns: 1fr; }
 
-  #map { height: 280px; }
+  #map { min-height: 380px; height: clamp(380px, 80vw, 520px); }
 
   .filter-bar { flex-direction: column; align-items: flex-start; }
 
