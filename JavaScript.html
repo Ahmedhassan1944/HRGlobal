@@ -544,7 +544,7 @@ var MapRenderer = (function() {
   // ── Dashboard display labels for the six target countries ─────────────────
   var ISO3_LABEL = {
     EGY: 'Egypt',
-    SAU: 'KSA',
+    SAU: 'Saudi Arabia',
     ARE: 'UAE',
     OMN: 'Oman',
     TZA: 'Tanzania',
@@ -611,6 +611,24 @@ var MapRenderer = (function() {
         return;
       }
 
+      // Mandatory KSA / Saudi Arabia correction: Explicit assertion
+      var features = MAP_GEO_DATA.features || [];
+      var hasSAU = false;
+      for (var f = 0; f < features.length; f++) {
+        if (features[f].properties.ISO_A3 === 'SAU' || features[f].properties.NAME === 'Saudi Arabia') {
+          hasSAU = true;
+          // Normalize to ISO_A3 for the rest of the logic
+          features[f].properties.ISO_A3 = 'SAU';
+          break;
+        }
+      }
+      if (!hasSAU) {
+        var msg = '[MapRenderer] CRITICAL: Saudi Arabia (SAU) feature is missing or malformed in MapData.html.';
+        console.error(msg);
+        host.innerHTML = '<div class="map-empty-state" style="color:var(--color-status-danger);">' + msg + '</div>';
+        return;
+      }
+
       // Use a fixed 700x700 viewBox to preserve perfect geographic aspect ratio.
       // The CSS (#map { height: 100%; min-height: 450px }) and SVG preserveAspectRatio
       // will handle the responsive sizing without distorting the polygons.
@@ -640,7 +658,6 @@ var MapRenderer = (function() {
 
       // Render all country paths
       var self = this;
-      var features = MAP_GEO_DATA.features || [];
       for (var i = 0; i < features.length; i++) {
         var feat  = features[i];
         var props = feat.properties || {};
@@ -727,7 +744,7 @@ var MapRenderer = (function() {
         var pct     = (_totalActive > 0) ? ((count / _totalActive) * 100).toFixed(1) : '0.0';
         var active  = count > 0;
 
-        el.setAttribute('fill',         active ? FILL_ACTIVE   : '#2a3040');
+        el.setAttribute('fill',         active ? FILL_ACTIVE   : FILL_CONTEXT);
         el.setAttribute('stroke',       active ? STROKE_ACTIVE : STROKE_CONTEXT);
         el.setAttribute('stroke-width', active ? '0.8'         : '0.4');
         el.setAttribute('aria-label',   label + ': ' + _formatNumber(count) + ' active employees (' + pct + '% of total)');
@@ -763,11 +780,11 @@ var MapRenderer = (function() {
       g.setAttribute('aria-hidden', 'true');
       g.setAttribute('transform',   'translate(' + pt.x + ',' + pt.y + ')');
 
-      // Background pill
+      // Background pill (widened to accommodate "Saudi Arabia")
       var rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-      rect.setAttribute('x',      '-22');
+      rect.setAttribute('x',      '-28');
       rect.setAttribute('y',      '-9');
-      rect.setAttribute('width',  '44');
+      rect.setAttribute('width',  '56');
       rect.setAttribute('height', '18');
       rect.setAttribute('rx',     '4');
       rect.setAttribute('fill',   LABEL_BG);
