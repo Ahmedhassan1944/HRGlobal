@@ -108,6 +108,16 @@
   --nav-height:        64px;
   --sidebar-width:     0px;
   --content-max-width: 1600px;
+
+  /* Overview table scroll-window dimensions.
+     --overview-data-row-h : measured height of one tbody <tr>.
+       padding-top(8px) + line-height(~22px) + padding-bottom(8px) + border(1px) = 39px
+     --overview-thead-h    : measured height of the sticky <thead> row.
+       padding-top(8px) + line-height(~19px) + padding-bottom(8px) + border(1px) = 36px
+     The scroll container must be tall enough for the sticky thead PLUS
+     exactly six data rows so the sixth row is fully visible. */
+  --overview-data-row-h: 39px;
+  --overview-thead-h:    36px;
 }
 
 /* ── 2. RESET & BASE ────────────────────────────────────────────────────── */
@@ -714,6 +724,11 @@ a { color: inherit; text-decoration: none; }
   overflow: hidden;
   box-shadow: var(--shadow-sm);
   transition: box-shadow var(--transition-base);
+  /* Flex column so the body grows to fill the grid cell height,
+     keeping all three cards equal when rows < 6. */
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
 
 .table-card:hover {
@@ -749,8 +764,17 @@ a { color: inherit; text-decoration: none; }
 }
 
 .table-card__body {
-  overflow-y: auto;
-  max-height: 360px;
+  /* Scroll window sized to show exactly 6 complete data rows.
+     The sticky <thead> occupies --overview-thead-h inside the container,
+     so the container must be thead-height + (6 × row-height) to keep
+     the sixth row fully visible and unclipped.
+     overflow-y is set conditionally by JS (auto when rows > 6, hidden otherwise)
+     so Country with ≤ 6 rows shows no scrollbar track. */
+  height: calc(var(--overview-thead-h) + 6 * var(--overview-data-row-h));
+  min-height: calc(var(--overview-thead-h) + 6 * var(--overview-data-row-h));
+  overflow-y: hidden;
+  overflow-x: hidden;
+  flex-grow: 1;
 }
 
 .table-card__body::-webkit-scrollbar { width: 4px; }

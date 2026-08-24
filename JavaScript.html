@@ -368,6 +368,18 @@ var OverviewCtrl = {
     var tbody = document.getElementById(tbodyId);
     if (!tbody) return;
 
+    var total = (rows && rows.length) ? rows.length : 0;
+
+    // Update aria-label for screen-reader users.
+    var tableEl = tbody.closest('table');
+    if (tableEl) {
+      tableEl.setAttribute('aria-label',
+        total + ' records. ' + (total > 6 ? 'Scroll to see all.' : ''));
+    }
+
+    // Locate the scroll container once — used for overflow-y and scrollTop below.
+    var bodyEl = tbody.closest('.table-card__body');
+
     if (!rows || rows.length === 0) {
       tbody.innerHTML = '<tr><td colspan="3">' +
         '<div class="empty-state" style="padding:24px 0;">' +
@@ -375,11 +387,15 @@ var OverviewCtrl = {
           '<div class="empty-state__title">No Data Found</div>' +
           '<div class="empty-state__subtitle">Try changing filters</div>' +
         '</div></td></tr>';
+      // No scrollbar needed when there is no data.
+      if (bodyEl) { bodyEl.style.overflowY = 'hidden'; bodyEl.scrollTop = 0; }
       var countEl = document.getElementById(countId);
       if (countEl) countEl.textContent = '0';
       return;
     }
 
+    // Render ALL rows into the DOM. The CSS fixed-height container clips the
+    // view to 6 rows; the user scrolls inside the card to reach the rest.
     var html = '';
     for (var i = 0; i < rows.length; i++) {
       html += '<tr>' +
@@ -390,6 +406,15 @@ var OverviewCtrl = {
     }
     tbody.innerHTML = html;
 
+    // Conditional scrollbar: show only when content overflows 6 rows.
+    // overflow-y:'hidden' removes the scrollbar track for tables with ≤ 6 rows.
+    // overflow-y:'auto'   shows the scrollbar only when rows exceed the viewport.
+    if (bodyEl) {
+      bodyEl.style.overflowY = rows.length > 6 ? 'auto' : 'hidden';
+      bodyEl.scrollTop = 0;
+    }
+
+    // Badge: total record count only — no "6 of N shown", no "Top 6".
     var countEl = document.getElementById(countId);
     if (countEl) countEl.textContent = _formatNumber(rows.length);
   }

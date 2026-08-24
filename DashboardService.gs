@@ -68,7 +68,10 @@ function buildOverviewPayload(data, filters) {
     .map(([name, count]) => ({ name, count }))
     .sort((a, b) => b.count - a.count);
 
-  // ── Nationality Table (Top 15) ────────────────────────────────────────────
+  // ── Nationality Table (all nationalities, no display cap) ─────────────────
+  // The previous .slice(0, 15) limit has been removed. All distinct
+  // nationalities in the current filtered dataset are returned so the client
+  // can display them in a scrollable six-row-high viewport.
   const natAcc = {};
   filtered.forEach(emp => {
     const n = nationalities[emp.nationalityKey];
@@ -77,8 +80,7 @@ function buildOverviewPayload(data, filters) {
   });
   const nationalityTable = Object.entries(natAcc)
     .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 15);
+    .sort((a, b) => b.count - a.count);
 
   // ── Map Pins (all active employees, unfiltered by dept) ───────────────────
   const mapAcc = {};
