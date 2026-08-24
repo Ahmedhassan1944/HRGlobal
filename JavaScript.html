@@ -255,12 +255,15 @@ var FilterManager = {
       OverviewCtrl.applyFilters();
     });
 
-    this._addClick('overview-reset-filters-btn', function() {
+    FilterManager.resetOverviewFilters = function() {
       AppState.resetOverviewFilters();
       self.setDropdownValue('filter-country', 'All');
       self.setDropdownValue('filter-department', 'All');
       OverviewCtrl.applyFilters();
-    });
+    };
+
+    this._addClick('overview-reset-filters-btn', FilterManager.resetOverviewFilters);
+    this._addClick('map-reset-filters-btn', FilterManager.resetOverviewFilters);
 
     this._addChange('nat-filter-country', function(e) {
       AppState.set('natCountryFilter', e.target.value);
@@ -843,16 +846,21 @@ var MapRenderer = (function() {
         var className = 'map-country map-country--target';
 
         if (activeCountryFilter !== 'All') {
-          if (isSelected && active) {
-            className += ' map-country--selected';
-            fill = FILL_ACTIVE;
-            stroke = STROKE_ACTIVE;
-            strokeWidth = '1.4';
-          } else if (active) {
-            className += ' map-country--dimmed';
-            fill = FILL_CONTEXT; // Visually de-emphasized
+          if (isSelected) {
+            if (active) {
+              className += ' map-country--selected';
+              fill = FILL_ACTIVE;
+              stroke = STROKE_ACTIVE;
+              strokeWidth = '1.4';
+            } else {
+              className += ' map-country--context';
+            }
+            el.setAttribute('tabindex', '0');
+            el.removeAttribute('aria-hidden');
           } else {
-            className += ' map-country--context';
+            className += ' map-country--filtered-out';
+            el.removeAttribute('tabindex');
+            el.setAttribute('aria-hidden', 'true');
           }
         } else {
           if (active) {
@@ -863,6 +871,8 @@ var MapRenderer = (function() {
           } else {
             className += ' map-country--context';
           }
+          el.setAttribute('tabindex', '0');
+          el.removeAttribute('aria-hidden');
         }
 
         el.setAttribute('class', className);
@@ -988,12 +998,24 @@ var MapRenderer = (function() {
         var cnt  = _activeData[iso3];
         el.textContent = (cnt !== undefined && cnt !== null) ? _formatNumber(cnt) : '—';
       }
+      var activeCountryFilter = AppState.get('overviewFilter').country;
+      var activeFilterIso3 = activeCountryFilter === 'All' ? null : (NAME_TO_ISO3[activeCountryFilter] || activeCountryFilter);
+
       // Attempt to resize pill width from rendered text (non-critical; init-time pill is already safe)
       var nameEls = _svg ? _svg.querySelectorAll('.map-label__name') : [];
       for (var j = 0; j < nameEls.length; j++) {
         var nel  = nameEls[j];
         var gr   = nel.parentNode;
         if (!gr) continue;
+        
+        var iso3Code = gr.getAttribute('data-iso3');
+        var isSelected = activeFilterIso3 && activeFilterIso3 === iso3Code;
+        if (activeCountryFilter !== 'All' && !isSelected) {
+          gr.style.display = 'none';
+        } else {
+          gr.style.display = '';
+        }
+
         var rct  = gr.querySelector('rect');
         if (!rct) continue;
         try {
@@ -1087,6 +1109,15 @@ var MapRenderer = (function() {
 
     // ── Country click ─────────────────────────────────────────────────────────
     _onCountryClick: function(iso3, displayName) {
+      // Toggle-to-reset: check if this is the currently selected country
+      var activeCountryFilter = AppState.get('overviewFilter').country;
+      var activeFilterIso3 = activeCountryFilter === 'All' ? null : (NAME_TO_ISO3[activeCountryFilter] || activeCountryFilter);
+      
+      if (activeFilterIso3 === iso3 && typeof FilterManager !== 'undefined' && FilterManager.resetOverviewFilters) {
+        FilterManager.resetOverviewFilters();
+        return;
+      }
+
       // Communicate selection to existing filter system.
       // The dashboard filter dropdown stores names using CONFIG.COUNTRIES values
       // (e.g. 'KSA' for Saudi Arabia). Try matching by option value = displayName

@@ -208,7 +208,15 @@
         <h2 id="map-title" class="map-card__title">
           🗺 Workforce Distribution Map — Middle East &amp; Africa
         </h2>
-        <span class="badge badge--gold" aria-label="Interactive map">Interactive</span>
+        <div style="display: flex; gap: var(--space-md); align-items: center;">
+          <button id="map-reset-filters-btn"
+                  class="filter-bar__reset-btn"
+                  type="button"
+                  aria-label="Reset all dashboard filters">
+            ✕ Reset
+          </button>
+          <span class="badge badge--gold" aria-label="Interactive map">Interactive</span>
+        </div>
       </div>
       <div id="map"
            role="application"
