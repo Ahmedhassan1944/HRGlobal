@@ -454,6 +454,29 @@ function test_T06_Analytics(data) {
   }
 }
 
+function test_T06b_NationalizationStatus() {
+  TestRunner.suite('T06b — Nationalization Status Logic');
+
+  try {
+    // 50% target tests
+    TestRunner.assert(classifyNationalizationStatus(60, 50)    === 'Above Target', '60% vs 50% is Above Target');
+    TestRunner.assert(classifyNationalizationStatus(51, 50)    === 'Above Target', '51% vs 50% is Above Target (not Near)');
+    TestRunner.assert(classifyNationalizationStatus(50, 50)    === 'Above Target', '50% vs 50% is Above Target');
+    TestRunner.assert(classifyNationalizationStatus(49.99, 50) === 'Near Target', '49.99% vs 50% is Near Target');
+    TestRunner.assert(classifyNationalizationStatus(45, 50)    === 'Near Target', '45% vs 50% is Near Target');
+    TestRunner.assert(classifyNationalizationStatus(40, 50)    === 'Near Target', '40% vs 50% is Near Target');
+    TestRunner.assert(classifyNationalizationStatus(39.99, 50) === 'Below Target', '39.99% vs 50% is Below Target');
+    TestRunner.assert(classifyNationalizationStatus(0, 50)     === 'Below Target', '0% vs 50% is Below Target');
+
+    // 85% target tests
+    TestRunner.assert(classifyNationalizationStatus(90, 85)    === 'Above Target', '90% vs 85% is Above Target');
+    TestRunner.assert(classifyNationalizationStatus(80, 85)    === 'Near Target', '80% vs 85% is Near Target');
+    TestRunner.assert(classifyNationalizationStatus(75, 85)    === 'Near Target', '75% vs 85% is Near Target');
+    TestRunner.assert(classifyNationalizationStatus(74.99, 85) === 'Below Target', '74.99% vs 85% is Below Target');
+  } catch (e) {
+    TestRunner.fail('Nationalization Status tests', e.message);
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // T07 — DASHBOARD PAYLOAD (getDashboardData simulation)
@@ -745,6 +768,10 @@ function runAllTests() {
   try {
     test_T06_Analytics(data);
   } catch (e) { console.log(`T06 crashed: ${e.message}`); }
+
+  try {
+    test_T06b_NationalizationStatus();
+  } catch (e) { console.log(`T06b crashed: ${e.message}`); }
 
   try {
     test_T07_DashboardPayload();

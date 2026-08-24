@@ -56,23 +56,28 @@ function calculateNationalizationRate(employees, nationalityMap, targetCountryKe
 }
 
 /**
- * Classifies nationalization compliance based on variance from target.
+ * Classifies nationalization compliance based on a strict target and gap rule.
  *
- * Thresholds (using CONFIG.NEAR_TARGET_THRESHOLD = ±2%):
- *   variance >= +2%  → "Above Target"  (green)
- *   -2% <= var < +2% → "Near Target"   (amber)
- *   variance < -2%   → "Below Target"  (red)
+ * Rules:
+ *   actual >= target                                     → 'Above Target' (green)
+ *   target - NEAR_GAP <= actual < target                 → 'Near Target' (amber)
+ *   actual < target - NEAR_GAP                           → 'Below Target' (red)
+ *
+ * The gap is in absolute percentage points, not a relative multiplier.
  *
  * @param {number} actual   Current nationalization percentage
  * @param {number} target   Target nationalization percentage
  * @returns {'Above Target'|'Near Target'|'Below Target'}
  */
 function classifyNationalizationStatus(actual, target) {
-  const variance = actual - target;
-  const threshold = CONFIG.NEAR_TARGET_THRESHOLD;
+  if (actual >= target) {
+    return 'Above Target';
+  }
 
-  if (variance >= threshold)   return 'Above Target';
-  if (variance >= -threshold)  return 'Near Target';
+  if (actual < target && actual >= target - CONFIG.NEAR_TARGET_GAP_POINTS) {
+    return 'Near Target';
+  }
+
   return 'Below Target';
 }
 

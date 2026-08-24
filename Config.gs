@@ -37,10 +37,10 @@ const CONFIG = {
   },
 
   /**
-   * Variance threshold for "Near Target" nationalization status.
-   * Within ±NEAR_TARGET_THRESHOLD% of target → Near Target
+   * Gap for "Near Target" nationalization status in percentage points.
+   * target - NEAR_TARGET_GAP_POINTS <= actual < target → Near Target
    */
-  NEAR_TARGET_THRESHOLD: 2,
+  NEAR_TARGET_GAP_POINTS: 10,
 
   /** Display order for countries across the dashboard */
   COUNTRIES: ['Egypt', 'KSA', 'UAE', 'Oman', 'Tanzania', 'Angola'],

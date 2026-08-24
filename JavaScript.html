@@ -252,6 +252,9 @@ var FilterManager = {
     this.populateDropdown('nat-filter-country', filterOptions.countries  || []);
     this.populateDropdown('chart-filter-country', filterOptions.countries|| []);
 
+    if (this._initialized) return;
+    this._initialized = true;
+
     this._addChange('filter-country', function(e) {
       AppState.setOverviewFilter('country', e.target.value);
       OverviewCtrl.applyFilters();
@@ -331,27 +334,41 @@ var OverviewCtrl = {
     MapRenderer.updatePins(overview.mapPins);
   },
 
+  _applyFiltersTimeout: null,
+  _applyFiltersSeq: 0,
+
   applyFilters: function() {
     var self    = this;
     var filters = AppState.get('overviewFilter');
-    LoadingManager.setKpiLoading('overview-headcount', true);
-    LoadingManager.setTableLoading('country-table-body', 3);
-    LoadingManager.setTableLoading('dept-table-body', 3);
-    LoadingManager.setTableLoading('nat-table-body', 3);
+    var currentSeq = ++this._applyFiltersSeq;
 
-    GASClient.call('getOverviewData', filters)
-      .then(function(res) {
-        if (!res.success) throw new Error(res.error);
-        self.render(res.overview);
-        var ctx = document.getElementById('overview-country-context');
-        if (ctx) ctx.textContent = (filters.country !== 'All') ? filters.country : 'All Countries';
-      })
-      .catch(function(e) {
-        ErrorManager.show('Failed to apply filters: ' + e.message);
-      })
-      .then(function() {
-        LoadingManager.setKpiLoading('overview-headcount', false);
-      });
+    if (this._applyFiltersTimeout) clearTimeout(this._applyFiltersTimeout);
+
+    // Debounce to coalesce rapid UI changes (e.g., country + department selected rapidly)
+    this._applyFiltersTimeout = setTimeout(function() {
+      LoadingManager.setKpiLoading('overview-headcount', true);
+      LoadingManager.setTableLoading('country-table-body', 3);
+      LoadingManager.setTableLoading('dept-table-body', 3);
+      LoadingManager.setTableLoading('nat-table-body', 3);
+
+      GASClient.call('getOverviewData', filters)
+        .then(function(res) {
+          // Race-safe guard: ignore stale responses
+          if (self._applyFiltersSeq !== currentSeq) return;
+          if (!res.success) throw new Error(res.error);
+          self.render(res.overview);
+          var ctx = document.getElementById('overview-country-context');
+          if (ctx) ctx.textContent = (filters.country !== 'All') ? filters.country : 'All Countries';
+        })
+        .catch(function(e) {
+          if (self._applyFiltersSeq !== currentSeq) return;
+          ErrorManager.show('Failed to apply filters: ' + e.message);
+        })
+        .then(function() {
+          if (self._applyFiltersSeq !== currentSeq) return;
+          LoadingManager.setKpiLoading('overview-headcount', false);
+        });
+    }, 150); // 150ms debounce
   },
 
   _renderKpi: function(headCount, countryTable) {
@@ -1342,17 +1359,30 @@ var ChartRenderer = {
     });
   },
 
+  _reloadSeq: 0,
+  _reloadTimeout: null,
+
   reload: function(granularity, countryFilter) {
-    LoadingManager.showChartLoading();
-    GASClient.call('getHiringTrend', granularity, countryFilter === 'All' ? null : countryFilter)
-      .then(function(res) {
-        if (!res.success) throw new Error(res.error);
-        ChartRenderer.render(res.trend);
-      })
-      .catch(function(e) {
-        LoadingManager.hideChartLoading();
-        ErrorManager.show('Chart load failed: ' + e.message);
-      });
+    var self = this;
+    var currentSeq = ++this._reloadSeq;
+
+    if (this._reloadTimeout) clearTimeout(this._reloadTimeout);
+
+    // Debounce to prevent multiple requests when changing gran + country rapidly
+    this._reloadTimeout = setTimeout(function() {
+      LoadingManager.showChartLoading();
+      GASClient.call('getHiringTrend', granularity, countryFilter === 'All' ? null : countryFilter)
+        .then(function(res) {
+          if (self._reloadSeq !== currentSeq) return; // Stale response guard
+          if (!res.success) throw new Error(res.error);
+          self.render(res.trend);
+        })
+        .catch(function(e) {
+          if (self._reloadSeq !== currentSeq) return;
+          LoadingManager.hideChartLoading();
+          ErrorManager.show('Chart load failed: ' + e.message);
+        });
+    }, 150);
   }
 };
 
