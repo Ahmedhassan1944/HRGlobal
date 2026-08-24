@@ -186,6 +186,13 @@ var Router = {
     if (page === 'overview' && MapRenderer.map) {
       setTimeout(function() { MapRenderer.map.invalidateSize(); }, 100);
     }
+    // When returning to the nationalization page, resize the chart so it fills
+    // the now-visible container correctly without requiring any user interaction.
+    if (page === 'nationalization' && ChartRenderer.chart) {
+      requestAnimationFrame(function() {
+        if (ChartRenderer.chart) ChartRenderer.chart.resize();
+      });
+    }
   },
 
   init: function() {
@@ -1228,11 +1235,21 @@ var ChartRenderer = {
     var canvas = document.getElementById('hiring-chart');
     if (!canvas || typeof Chart === 'undefined') return;
 
+    // Destroy any existing instance first (idempotent)
     if (this.chart) {
       this.chart.destroy();
       this.chart = null;
     }
 
+    // Make the canvas visible BEFORE Chart.js instantiates so it can read
+    // real clientWidth/clientHeight from the laid-out DOM. If the canvas is
+    // hidden (display:none) at construction time Chart.js measures 0 px,
+    // bakes that into the chart, and the chart appears collapsed or
+    // incorrectly sized until the next resize event (which previously only
+    // fired on user interaction).
+    var skeleton = document.getElementById('hiring-chart-skeleton');
+    if (skeleton) skeleton.style.display = 'none';
+    canvas.style.display = 'block';
     var datasets = [];
     for (var i = 0; i < trend.datasets.length; i++) {
       var ds = trend.datasets[i];
@@ -1255,8 +1272,7 @@ var ChartRenderer = {
       data: { labels: trend.labels, datasets: datasets },
       options: {
         responsive:          true,
-        maintainAspectRatio: true,
-        aspectRatio:         3.5,
+        maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
         plugins: {
           legend: {
@@ -1312,7 +1328,18 @@ var ChartRenderer = {
       }
     });
 
+    // LoadingManager.hideChartLoading() would set canvas display:block — already
+    // done above before chart creation. Call it to keep the state machine consistent
+    // (hides skeleton; canvas is already visible).
     LoadingManager.hideChartLoading();
+
+    // Safety net: request a resize on the next layout frame in case the container
+    // was still transitioning dimensions at construction time (e.g. skeleton
+    // collapse causes a layout reflow that changes the parent width).
+    var chartRef = this.chart;
+    requestAnimationFrame(function() {
+      if (chartRef) chartRef.resize();
+    });
   },
 
   reload: function(granularity, countryFilter) {

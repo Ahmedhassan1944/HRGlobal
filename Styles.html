@@ -1217,7 +1217,17 @@ a { color: inherit; text-decoration: none; }
 .chart-card__body {
   padding: var(--space-lg);
   position: relative;
-  min-height: 320px;
+  /* Explicit height (not just min-height) gives Chart.js with
+     maintainAspectRatio:false a non-zero clientHeight to measure
+     at instantiation time, preventing the collapsed first-paint bug. */
+  height: 360px;
+  box-sizing: border-box;
+}
+
+/* Canvas must fill the body block so Chart.js can compute correct dimensions */
+#hiring-chart {
+  width: 100% !important;
+  height: 100% !important;
 }
 
 .granularity-btn {
