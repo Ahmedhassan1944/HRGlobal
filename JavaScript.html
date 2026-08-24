@@ -716,17 +716,24 @@ var MapRenderer = (function() {
           pathEl.setAttribute('tabindex',   '0');
           pathEl.setAttribute('aria-label', (ISO3_LABEL[iso3] || iso3) + ': loading…');
           (function(el, code, displayName) {
-            el.addEventListener('mouseenter', function(e) { self._onHover(e, el, code, displayName); });
-            el.addEventListener('mouseleave', function()  { self._onLeave(el, code); });
-            el.addEventListener('click',      function()  { self._onCountryClick(code, displayName); });
-            el.addEventListener('keydown',    function(e) {
+            // Keyboard: focus/blur only change the stroke — tooltip is driven by pointer events.
+            el.addEventListener('focus', function() { self._applyHoverStyle(el, true); });
+            el.addEventListener('blur',  function() {
+              self._applyHoverStyle(el, false);
+              // Clear stale tooltip when keyboard focus leaves a target country.
+              if (self._hoveredEl === el) self._hideTooltip();
+            });
+            el.addEventListener('keydown', function(e) {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
                 self._onCountryClick(code, displayName);
               }
+              if (e.key === 'Escape') {
+                self._applyHoverStyle(el, false);
+                self._hideTooltip();
+              }
             });
-            el.addEventListener('focus',      function()  { self._applyHoverStyle(el, true);  });
-            el.addEventListener('blur',       function()  { self._applyHoverStyle(el, false); });
+            el.addEventListener('click', function() { self._onCountryClick(code, displayName); });
           })(pathEl, iso3, ISO3_LABEL[iso3] || iso3);
         } else {
           pathEl.setAttribute('aria-hidden', 'true');
@@ -742,6 +749,57 @@ var MapRenderer = (function() {
       // Zoom and Pan are permanently disabled for a fixed Power BI-style visualization.
 
       host.insertBefore(_svg, host.firstChild);
+
+      // ── Delegated pointer events on the SVG host ─────────────────────────
+      // A single pointermove listener replaces per-path mouseenter/mouseleave.
+      // This is deterministic across Firefox, Chrome, Edge, and Brave because
+      // we always hit-test the element under the pointer at every move event.
+      var mapSelf = this;
+      _svg.addEventListener('pointermove', function(e) {
+        // Re-test actual element under pointer (handles SVG fill-rule gaps,
+        // multi-polygon countries, and rapid movement between countries).
+        var target = document.elementFromPoint(e.clientX, e.clientY);
+        // Walk up to a path with data-iso3 (handles sub-elements inside groups)
+        while (target && target !== _svg) {
+          if (target.hasAttribute && target.hasAttribute('data-iso3')) break;
+          target = target.parentNode;
+        }
+        var iso3 = (target && target.hasAttribute && target.hasAttribute('data-iso3'))
+                     ? target.getAttribute('data-iso3') : null;
+        var isTarget = iso3 && _pathEls[iso3];
+
+        if (isTarget) {
+          var el = _pathEls[iso3];
+          if (mapSelf._hoveredEl !== el) {
+            // Leaving a previous country — clear its style
+            if (mapSelf._hoveredEl) mapSelf._applyHoverStyle(mapSelf._hoveredEl, false);
+            mapSelf._hoveredEl = el;
+            mapSelf._applyHoverStyle(el, true);
+            var displayName = ISO3_LABEL[iso3] || iso3;
+            var count = _activeData[iso3] || 0;
+            var pct = (_totalActive > 0) ? ((count / _totalActive) * 100).toFixed(1) + '%' : 'N/A';
+            var html = '<strong>' + _escHtml(displayName) + '</strong>' +
+                       '<br><span class="map-tooltip__count">' + _formatNumber(count) + '</span>' +
+                       '<span class="map-tooltip__label"> active employees</span>' +
+                       '<br><span class="map-tooltip__pct">' + pct + ' of total</span>';
+            mapSelf._showTooltip(e, html);
+          } else {
+            // Same country — just update position
+            mapSelf._showTooltip(e, null);
+          }
+        } else {
+          // Over empty space, label, or context country
+          if (mapSelf._hoveredEl) mapSelf._applyHoverStyle(mapSelf._hoveredEl, false);
+          mapSelf._hideTooltip();
+        }
+      });
+
+      // pointerleave fires when the pointer exits the SVG element entirely.
+      // This is the primary guard ensuring no stale tooltip survives map exit.
+      _svg.addEventListener('pointerleave', function() {
+        if (mapSelf._hoveredEl) mapSelf._applyHoverStyle(mapSelf._hoveredEl, false);
+        mapSelf._hideTooltip();
+      });
     },
 
     // ── updatePins ──────────────────────────────────────────────────────────
@@ -974,11 +1032,13 @@ var MapRenderer = (function() {
 
       el.setAttribute('stroke',       on ? STROKE_HOVER : defaultStroke);
       el.setAttribute('stroke-width', on ? '1.4'        : defaultWidth);
-      if (on && _pathLayer) {
-        // Explicitly re-append within the path layer only — never touches _labelLayer
-        _pathLayer.appendChild(el);
-      }
+      // DOM order is never changed during hover — no _pathLayer.appendChild here.
+      // The label layer always remains on top via SVG z-order (appended after _pathLayer).
     },
+
+    // _hoveredEl tracks which path is currently highlighted.
+    // Used by delegated pointermove to detect country transitions.
+    _hoveredEl: null,
 
     _onHover: function(e, el, iso3, displayName) {
       this._applyHoverStyle(el, true);
@@ -998,8 +1058,12 @@ var MapRenderer = (function() {
 
     _showTooltip: function(e, html) {
       if (!_tooltip) return;
-      _tooltip.innerHTML = html;
-      _tooltip.hidden    = false;
+      // html===null means position-only update (same country, pointer moved)
+      if (html !== null) {
+        _tooltip.innerHTML = html;
+        _tooltip.setAttribute('aria-hidden', 'false');
+      }
+      _tooltip.hidden = false;
       var host = _tooltip.parentNode;
       var hRect = host ? host.getBoundingClientRect() : { left: 0, top: 0 };
       var tx = e.clientX - hRect.left + 12;
@@ -1011,8 +1075,14 @@ var MapRenderer = (function() {
       _tooltip.style.top  = ty + 'px';
     },
 
+    // Idempotent: safe to call multiple times; clears all hover state.
     _hideTooltip: function() {
-      if (_tooltip) _tooltip.hidden = true;
+      if (_tooltip) {
+        _tooltip.hidden = true;
+        _tooltip.setAttribute('aria-hidden', 'true');
+        _tooltip.innerHTML = '';
+      }
+      this._hoveredEl = null;
     },
 
     // ── Country click ─────────────────────────────────────────────────────────
@@ -1247,16 +1317,87 @@ function _escHtml(str) {
     .replace(/'/g,  '&#39;');
 }
 
+/**
+ * Returns a deterministic inline SVG flag for the six dashboard countries.
+ * No Unicode regional-indicator emoji, no external resources, no CDN.
+ * Each flag is a 24×16 SVG with explicit fills.
+ * Falls back to a neutral local SVG world icon for unknown country names.
+ *
+ * @param  {string} countryName  The display name from DashboardService
+ * @returns {string}             An <svg> HTML string, always aria-hidden="true"
+ */
 function _countryFlag(countryName) {
-  var flags = {
-    Egypt:    '\ud83c\uddea\ud83c\uddec',
-    KSA:      '\ud83c\uddf8\ud83c\udde6',
-    UAE:      '\ud83c\udde6\ud83c\uddea',
-    Oman:     '\ud83c\uddf4\ud83c\uddf2',
-    Tanzania: '\ud83c\uddf9\ud83c\uddff',
-    Angola:   '\ud83c\udde6\ud83c\uddf4'
+  // Canonical name → ISO-3166-1 alpha-2 mapping for the six dashboard countries.
+  // KSA is an accepted data alias for Saudi Arabia (ISO2: SA).
+  var NAME_TO_ISO2 = {
+    'Egypt':        'EG',
+    'Saudi Arabia': 'SA',
+    'KSA':          'SA',
+    'UAE':          'AE',
+    'Oman':         'OM',
+    'Tanzania':     'TZ',
+    'Angola':       'AO'
   };
-  return flags[countryName] || '\ud83c\udf0d';
+
+  // Inline SVG flags — viewBox="0 0 24 16", explicit fills, no emoji font.
+  // Each entry is the inner SVG content (rects/paths only; wrapper added below).
+  var FLAG_SVG = {
+    // Egypt: horizontal tricolour Red/White/Black + golden eagle (simplified)
+    'EG': '<rect width="24" height="6" fill="#CE1126"/>' +
+          '<rect y="6" width="24" height="5" fill="#FFFFFF"/>' +
+          '<rect y="11" width="24" height="5" fill="#000000"/>' +
+          '<rect x="9" y="7" width="6" height="3" rx="0.5" fill="#C09300"/>',
+
+    // Saudi Arabia: green field, white Arabic inscription (simplified) + sword
+    'SA': '<rect width="24" height="16" fill="#006C35"/>' +
+          '<rect x="3" y="5" width="18" height="1.5" rx="0.4" fill="#FFFFFF"/>' +
+          '<rect x="3" y="7" width="18" height="1.5" rx="0.4" fill="#FFFFFF"/>' +
+          '<rect x="10" y="9" width="4" height="3" rx="0.3" fill="#FFFFFF"/>',
+
+    // UAE: vertical red stripe (left) + horizontal green/white/black stripes
+    'AE': '<rect width="7" height="16" fill="#EF3340"/>' +
+          '<rect x="7" width="17" height="6" fill="#00732F"/>' +
+          '<rect x="7" y="6" width="17" height="4" fill="#FFFFFF"/>' +
+          '<rect x="7" y="10" width="17" height="6" fill="#000000"/>',
+
+    // Oman: vertical red stripe (left), white & red with green square top-left
+    'OM': '<rect width="24" height="16" fill="#DB161B"/>' +
+          '<rect x="6" width="18" height="7" fill="#FFFFFF"/>' +
+          '<rect x="6" y="7" width="18" height="2" fill="#FFFFFF"/>' +
+          '<rect x="6" y="9" width="18" height="7" fill="#DB161B"/>' +
+          '<rect x="0" y="0" width="6" height="6" fill="#008000"/>',
+
+    // Tanzania: diagonal tricolour black/yellow/green + blue triangles
+    'TZ': '<rect width="24" height="16" fill="#1EB53A"/>' +
+          '<polygon points="0,0 14,0 0,16" fill="#00A3DD"/>' +
+          '<polygon points="24,0 24,16 10,16" fill="#00A3DD"/>' +
+          '<polygon points="0,16 0,10 20,0 24,0 24,3 4,16" fill="#000000"/>' +
+          '<polygon points="0,13 0,16 6,16 22,0 18,0" fill="#FCD116"/>',
+
+    // Angola: horizontal bicolour Red/Black + yellow gear-machete emblem (simplified)
+    'AO': '<rect width="24" height="8" fill="#CC0000"/>' +
+          '<rect y="8" width="24" height="8" fill="#000000"/>' +
+          '<circle cx="12" cy="8" r="3" fill="none" stroke="#FFCC00" stroke-width="1.2"/>' +
+          '<rect x="11.3" y="4.5" width="1.4" height="7" rx="0.3" fill="#FFCC00"/>'
+  };
+
+  // Neutral fallback — a simple globe SVG, no emoji
+  var FALLBACK_SVG =
+    '<circle cx="12" cy="8" r="7" fill="#334"/>' +
+    '<ellipse cx="12" cy="8" rx="4" ry="7" fill="none" stroke="#667" stroke-width="0.8"/>' +
+    '<line x1="5" y1="8" x2="19" y2="8" stroke="#667" stroke-width="0.8"/>' +
+    '<circle cx="12" cy="8" r="7" fill="none" stroke="#556" stroke-width="1"/>';
+
+  var iso2    = NAME_TO_ISO2[countryName];
+  var content = iso2 ? (FLAG_SVG[iso2] || FALLBACK_SVG) : FALLBACK_SVG;
+
+  return '<svg xmlns="http://www.w3.org/2000/svg"' +
+         ' viewBox="0 0 24 16"' +
+         ' width="24" height="16"' +
+         ' style="display:inline-block;vertical-align:middle;border-radius:2px;flex-shrink:0;"' +
+         ' aria-hidden="true">' +
+         content +
+         '</svg>';
 }
 
 function _statusIcon(status) {
