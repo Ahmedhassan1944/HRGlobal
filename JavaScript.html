@@ -1539,8 +1539,13 @@ var App = {
         OverviewCtrl.render(result.overview);
         NatCtrl.render(result.nationalization);
 
-        LoadingManager.showChartLoading();
-        ChartRenderer.reload('year', null);
+        if (result.trend) {
+          ChartRenderer.render(result.trend);
+        } else {
+          LoadingManager.showChartLoading();
+          ChartRenderer.reload('year', null);
+        }
+        
         MapRenderer.updatePins(result.overview.mapPins);
       })
       .catch(function(e) {

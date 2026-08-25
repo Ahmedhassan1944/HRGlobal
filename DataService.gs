@@ -69,9 +69,13 @@ function getCachedData() {
  * @returns {{ success: boolean, message: string, loadedAt: string|null }}
  */
 function refreshCache() {
+  const lock = LockService.getScriptLock();
   try {
-    const cache = CacheService.getScriptCache();
-    cache.remove(CACHE_KEY);
+    if (!lock.tryLock(10000)) {
+      throw new Error('Refresh is currently locked by another process. Please try again later.');
+    }
+    
+    _clearCacheSafely();
     AppLogger.info('DataService', 'refreshCache', 'Cache cleared');
 
     const data = loadAllData();
@@ -83,6 +87,33 @@ function refreshCache() {
   } catch (e) {
     AppLogger.error('DataService', 'refreshCache', e.message);
     return { success: false, message: e.message, loadedAt: null };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Safely removes all related cache keys, including chunks.
+ * Uses a fallback chunk count if the metadata is missing or corrupted.
+ */
+function _clearCacheSafely() {
+  const cache = CacheService.getScriptCache();
+  
+  let chunksToRemove = 50; // Fallback maximum
+  const metaRaw = cache.get(CACHE_KEY_META);
+  if (metaRaw) {
+    try {
+      const meta = JSON.parse(metaRaw);
+      if (meta.empChunks) chunksToRemove = meta.empChunks;
+    } catch (e) {
+      AppLogger.warn('DataService', '_clearCacheSafely', 'Failed to parse meta, using fallback chunk count.');
+    }
+  }
+
+  cache.remove(CACHE_KEY);
+  cache.remove(CACHE_KEY_META);
+  for (let i = 0; i < chunksToRemove; i++) {
+    cache.remove(CACHE_KEY_EMP + i);
   }
 }
 

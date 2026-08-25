@@ -73,7 +73,7 @@ function include(filename) {
  *
  * @returns {{ success: boolean, overview: OverviewPayload,
  *             nationalization: NationalizationPayload,
- *             filterOptions: Object, meta: Object }}
+ *             filterOptions: Object, trend: Object, meta: Object }}
  */
 function getDashboardData() {
   try {
@@ -83,12 +83,14 @@ function getDashboardData() {
     const overview        = buildOverviewPayload(data, filters);
     const nationalization = buildNationalizationPayload(data, null);
     const filterOptions   = buildFilterOptions(data);
+    const trendData       = buildHiringTrend(data.employees, data.countries, 'year', null);
 
     return {
       success:       true,
       overview,
       nationalization,
       filterOptions,
+      trend:         trendData,
       meta: {
         loadedAt: data.loadedAt,
         today:    getFormattedToday()
@@ -190,18 +192,12 @@ function getFilterOptions() {
  */
 function clientRefreshCache() {
   try {
-    // refreshCache() is defined in DataService.gs and is globally accessible
-    const cache   = CacheService.getScriptCache();
-    cache.remove('EDECS_DASH_META');
-    // Remove all possible employee chunks
-    for (let i = 0; i < 20; i++) { cache.remove('EDECS_DASH_EMP_' + i); }
-    cache.remove('EDECS_DASHBOARD_DATA');
-    // Force a fresh load
-    loadAllData();
+    // refreshCache() is defined in DataService.gs and handles locking & safe invalidation
+    const res = refreshCache();
+    if (!res.success) throw new Error(res.message);
     return { success: true, message: 'Cache refreshed.' };
   } catch (e) {
     AppLogger.error('Code', 'clientRefreshCache', e.message);
     return { success: false, error: e.message };
   }
 }
-

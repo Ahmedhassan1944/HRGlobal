@@ -16,43 +16,48 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Calculates the nationalization rate for a single country.
+ * Calculates nationalization rates for all countries in a single pass.
  *
  * CORRECT LOGIC (per spec):
- *   For each ACTIVE employee in the target country:
+ *   For each ACTIVE employee:
  *     → Resolve their NationalityKey → Nationality object
- *     → Check if Nationality.CountryKey === targetCountryKey
+ *     → Check if Nationality.CountryKey === employee's CountryKey
  *     → If yes, they are a national of that country
  *
  * NEVER compare Nationality.Name === Country.Name directly.
  *
  * @param {Array<EmployeeRecord>}              employees       Full employee array
  * @param {Object.<string, NationalityRecord>} nationalityMap  Keyed by NationalityKey
- * @param {string}                             targetCountryKey  The country to evaluate
- * @returns {{ nationalCount: number, totalActive: number, rate: number }}
+ * @returns {Object.<string, { nationalCount: number, totalActive: number, rate: number }>} Map keyed by CountryKey
  */
-function calculateNationalizationRate(employees, nationalityMap, targetCountryKey) {
-  let totalActive   = 0;
-  let nationalCount = 0;
+function calculateAllNationalizationRates(employees, nationalityMap) {
+  const acc = {};
 
   employees.forEach(emp => {
-    // Only count active employees assigned to the target country
-    if (!emp.isActive || emp.countryKey !== targetCountryKey) return;
+    if (!emp.isActive) return;
 
-    totalActive++;
+    const cKey = emp.countryKey;
+    if (!cKey) return;
 
-    // Resolve nationality and check its country affiliation
+    if (!acc[cKey]) {
+      acc[cKey] = { totalActive: 0, nationalCount: 0, rate: 0 };
+    }
+
+    acc[cKey].totalActive++;
+
     const nat = nationalityMap[emp.nationalityKey];
-    if (nat && nat.countryKey === targetCountryKey) {
-      nationalCount++;
+    if (nat && nat.countryKey === cKey) {
+      acc[cKey].nationalCount++;
     }
   });
 
-  const rate = totalActive > 0
-    ? (nationalCount / totalActive) * 100
-    : 0;
+  // Calculate final rates
+  Object.keys(acc).forEach(cKey => {
+    const data = acc[cKey];
+    data.rate = data.totalActive > 0 ? (data.nationalCount / data.totalActive) * 100 : 0;
+  });
 
-  return { nationalCount, totalActive, rate };
+  return acc;
 }
 
 /**

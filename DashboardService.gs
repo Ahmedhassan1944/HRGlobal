@@ -26,70 +26,48 @@
 function buildOverviewPayload(data, filters) {
   const { employees, countries, nationalities, departments } = data;
 
-  // ── Filtered active employees ─────────────────────────────────────────────
-  const filtered = employees.filter(emp => {
-    if (!emp.isActive) return false;
-
-    if (filters.country) {
-      const c = countries[emp.countryKey];
-      if (!c || c.name !== filters.country) return false;
-    }
-
-    if (filters.department) {
-      const d = departments[emp.departmentKey];
-      if (!d || d.name !== filters.department) return false;
-    }
-
-    return true;
-  });
-
-  // ── Head Count ────────────────────────────────────────────────────────────
-  const headCount = filtered.length;
-
-  // ── Country Table ─────────────────────────────────────────────────────────
   const countryAcc = {};
-  filtered.forEach(emp => {
+  const deptAcc = {};
+  const natAcc = {};
+  const mapAcc = {};
+  let headCount = 0;
+
+  employees.forEach(emp => {
+    if (!emp.isActive) return;
+
+    // Map pins are unfiltered by dept/country filters
     const c = countries[emp.countryKey];
-    if (!c) return;
-    countryAcc[c.name] = (countryAcc[c.name] || 0) + 1;
+    if (c) mapAcc[c.name] = (mapAcc[c.name] || 0) + 1;
+
+    // Check filters for the rest of the overview
+    if (filters.country) {
+      if (!c || c.name !== filters.country) return;
+    }
+    const d = departments[emp.departmentKey];
+    if (filters.department) {
+      if (!d || d.name !== filters.department) return;
+    }
+
+    headCount++;
+
+    if (c) countryAcc[c.name] = (countryAcc[c.name] || 0) + 1;
+    if (d && d.name) deptAcc[d.name] = (deptAcc[d.name] || 0) + 1;
+    
+    const n = nationalities[emp.nationalityKey];
+    if (n && n.name) natAcc[n.name] = (natAcc[n.name] || 0) + 1;
   });
+
   const countryTable = Object.entries(countryAcc)
     .map(([name, count]) => ({ name, count }))
     .sort((a, b) => b.count - a.count);
 
-  // ── Department Table ──────────────────────────────────────────────────────
-  const deptAcc = {};
-  filtered.forEach(emp => {
-    const d = departments[emp.departmentKey];
-    if (!d || !d.name) return;
-    deptAcc[d.name] = (deptAcc[d.name] || 0) + 1;
-  });
   const deptTable = Object.entries(deptAcc)
     .map(([name, count]) => ({ name, count }))
     .sort((a, b) => b.count - a.count);
 
-  // ── Nationality Table (all nationalities, no display cap) ─────────────────
-  // The previous .slice(0, 15) limit has been removed. All distinct
-  // nationalities in the current filtered dataset are returned so the client
-  // can display them in a scrollable six-row-high viewport.
-  const natAcc = {};
-  filtered.forEach(emp => {
-    const n = nationalities[emp.nationalityKey];
-    if (!n || !n.name) return;
-    natAcc[n.name] = (natAcc[n.name] || 0) + 1;
-  });
   const nationalityTable = Object.entries(natAcc)
     .map(([name, count]) => ({ name, count }))
     .sort((a, b) => b.count - a.count);
-
-  // ── Map Pins (all active employees, unfiltered by dept) ───────────────────
-  const mapAcc = {};
-  employees.forEach(emp => {
-    if (!emp.isActive) return;
-    const c = countries[emp.countryKey];
-    if (!c) return;
-    mapAcc[c.name] = (mapAcc[c.name] || 0) + 1;
-  });
 
   /**
    * Centralized alias map: translates country display names (as they appear in
@@ -156,14 +134,15 @@ function buildNationalizationPayload(data, countryFilter) {
   const { employees, countries, nationalities } = data;
 
   const totalActive = employees.filter(e => e.isActive).length;
+  const ratesMap = calculateAllNationalizationRates(employees, nationalities);
 
   const cards = [];
 
   Object.values(countries).forEach(country => {
     if (countryFilter && country.name !== countryFilter) return;
 
-    const { nationalCount, totalActive: countryActive, rate } =
-      calculateNationalizationRate(employees, nationalities, country.key);
+    const rateData = ratesMap[country.key] || { nationalCount: 0, totalActive: 0, rate: 0 };
+    const { nationalCount, totalActive: countryActive, rate } = rateData;
 
     const applicableTarget = country.nationalizationApplicable ? country.targetPct : null;
     const variance = applicableTarget !== null
